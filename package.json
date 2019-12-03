@@ -1,0 +1,24 @@
+{
+  "name": "petri-runner",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "dependencies": {
+    "ramda": "^0.26.1",
+    "xml2json": "^0.11.2"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lamassu/petri-runner.git"
+  },
+  "author": "Josh Harvey <josh@lamassu.is> (https://lamassu.is/)",
+  "license": "Unlicense",
+  "bugs": {
+    "url": "https://github.com/lamassu/petri-runner/issues"
+  },
+  "homepage": "https://github.com/lamassu/petri-runner#readme"
+}
