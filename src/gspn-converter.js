@@ -26,6 +26,7 @@ function mapPlace (json) {
 function split (str) {
   return str ? R.split(/\s*,\s*/, str) : []
 }
+
 function mapTransitionNode (json) {
   const tags = split(json['superposition-tags'])
   return { name: json.name, tags }
