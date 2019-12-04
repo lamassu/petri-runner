@@ -3,15 +3,16 @@ const fs = require('fs')
 const xml2json = require('xml2json')
 const R = require('ramda')
 
-const transitionInputMap = {}
-const transitionOutputMap = {}
+let transitionInputMap = {}
+let transitionOutputMap = {}
 
 function convert (filepath) {
   const xml = fs.readFileSync(filepath)
   const json = JSON.parse(xml2json.toJson(xml, { arrayNotation: ['transition', 'place', 'arc'] }))
 
   const gspn = json.project.gspn
-  R.forEach(processNet, gspn)
+  const nets = R.map(processNet, gspn)
+  console.log(JSON.stringify(nets, null, 2))
 }
 
 function mapPlace (json) {
@@ -62,6 +63,9 @@ function updateTransition (transition) {
 }
 
 function processNet (json) {
+  transitionInputMap = {}
+  transitionOutputMap = {}
+
   const name = json.name
   const places = R.map(mapPlace, json.nodes.place)
   const transitions = R.map(mapTransitionNode, json.nodes.transition)
@@ -69,7 +73,7 @@ function processNet (json) {
   R.forEach(updateTransition, transitions)
 
   const net = { name, places, transitions }
-  console.log(JSON.stringify(net, null, 2))
+  return net
 }
 
 const filepath = process.argv[2]
