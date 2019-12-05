@@ -4,6 +4,7 @@ const util = require('util')
 
 const graphlib = require('@dagrejs/graphlib')
 const R = require('ramda')
+const chalk = require('chalk')
 
 const Graph = graphlib.Graph
 
@@ -11,6 +12,10 @@ let rootNet
 
 const nets = {}
 const subnetCounter = {}
+
+function warn (msg) {
+  console.log(chalk.yellow(chalk.bold('WARNING: '), msg))
+}
 
 function pp (o) {
   console.log(util.inspect(o, { depth: null, colors: true }))
@@ -81,7 +86,6 @@ function expandWith (parentNet, expansionPlace) {
   const subnetCount = subnetCounter[subnetPlaceName]
 
   const parentName = parentNet.name
-  console.log(`Processing ${parentName} <- ${subnetPlaceName}...`)
   assert(subnet, am('No such subnet.'))
 
   const isInitialPlace = R.pipe(R.prop('tags'), R.includes('initial'))
@@ -103,6 +107,12 @@ function expandWith (parentNet, expansionPlace) {
   const isSubnetInitialTransition = R.pipe(R.prop('inputs'), R.any(R.propEq('srcPlace', subnetPlaceName)))
   assert(parentNet.transitions)
   const collapsedTransitions = R.filter(isParentInitialTransition, parentNet.transitions)
+  const warnInvalidCollapsedTransition = t => {
+    if (!R.includes(subnetPlaceName, t.tags)) {
+      warn(am(`Collapsed transition ${t.name} is missing subnet tag.`))
+    }
+  }
+  R.forEach(warnInvalidCollapsedTransition, collapsedTransitions)
 
   const singleInput = R.pipe(R.prop('inputs'), R.length, R.equals(1))
   assert(R.all(singleInput, collapsedTransitions),
