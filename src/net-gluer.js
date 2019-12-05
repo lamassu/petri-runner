@@ -38,11 +38,11 @@ function loadNet (net) {
 
 const subnetName = place => {
   const subnets = R.filter(R.test(/^[A-Z]/), place.tags)
-  assert(subnets.length >= 1, `Place ${place.name} has multiple subnet tags.`)
+  assert(subnets.length <= 1, `Place ${place.name} has multiple subnet tags: ${R.join(', ', subnets)}.`)
   return R.isEmpty(subnets) ? null : R.head(subnets)
 }
 
-const placeSubnet = place => {
+const isSubnetPlace = place => {
   return !R.isNil(subnetName(place))
 }
 
@@ -52,43 +52,63 @@ function loadNets (netStructure) {
 
 function computeSubnetArcs (parentNet) {
   const parentNetName = parentNet.name
-  const subnetNames = R.map(R.prop('name'), R.filter(placeSubnet, parentNet.places))
+  const subnetNames = R.map(subnetName, R.filter(isSubnetPlace, parentNet.places))
   return R.map(R.pair(parentNetName), subnetNames)
 }
 
-function expandWith (parentNet, subnetPlaceName) {
+function expandWith (parentNet, expansionPlace) {
+  const expansionPlaceName = expansionPlace.name
+  const subnetPlaceName = subnetName(expansionPlace)
+  assert(subnetPlaceName)
   const am = s => `${parentName} <- ${subnetPlaceName}: ${s}`
   const subnet = nets[subnetPlaceName]
   const parentName = parentNet.name
+  console.log(`Processing ${parentName} <- ${subnetPlaceName}...`)
   assert(subnet, am('No such subnet.'))
+
   const isInitialPlace = R.pipe(R.prop('tags'), R.includes('initial'))
+  assert(subnet.places)
+
   const subnetInitialPlaces = R.filter(isInitialPlace, subnet.places)
   assert(subnetInitialPlaces.length === 1, am("Subnet doesn't have single initial place"))
+
   const subnetInitialPlace = R.head(subnetInitialPlaces)
   assert(subnetInitialPlace.name === subnetPlaceName, am('Subnet initial place incorrectly named.'))
   const toSortedTransitionNames = R.pipe(R.map(R.prop('name')), R.sortBy(R.identity))
   const isTerminalTransition = r => R.isEmpty(r.outputs)
+
+  assert(subnet.transitions)
   const subnetTerminalTransitions = R.filter(isTerminalTransition, subnet.transitions)
   const subnetTerminalTransitionNames = toSortedTransitionNames(subnetTerminalTransitions)
 
-  const isInitialTransition = R.pipe(R.prop('inputs'), R.includes(subnetPlaceName))
-  const collapsedTransitions = R.filter(isInitialTransition, parentNet.transitions)
+  const isParentInitialTransition = R.pipe(R.prop('inputs'), R.any(R.propEq('srcPlace', expansionPlaceName)))
+  const isSubnetInitialTransition = R.pipe(R.prop('inputs'), R.any(R.propEq('srcPlace', subnetPlaceName)))
+  assert(parentNet.transitions)
+  const collapsedTransitions = R.filter(isParentInitialTransition, parentNet.transitions)
+
   const singleInput = R.pipe(R.prop('inputs'), R.length, R.equals(1))
   assert(R.all(singleInput, collapsedTransitions),
     am('Has collapsed transition with multiple inputs.'))
   const collapsedTransitionNames = toSortedTransitionNames(collapsedTransitions)
   assert(R.equals(subnetTerminalTransitionNames, collapsedTransitionNames),
-    am('Collapsed transitions differ from subnet terminal transitions.'))
+    am('Collapsed transitions differ from subnet terminal transitions.' +
+      `\n${parentName}: ${collapsedTransitionNames}` +
+      `\n${subnetPlaceName}: ${subnetTerminalTransitionNames}`))
 
   // parent places remain the same
   // add namespaced subplaces, except for initial place
   const subnetNonInitialPlaces = R.reject(isInitialPlace, subnet.places)
-  const namespaceSubnet = name => `${name}_${globalCount}`
-  const subnetPlaces = R.map(namespaceSubnet, subnetNonInitialPlaces)
+
+  const namespaceSubnet = name => {
+    assert(R.is(String, name), 'subnetName is not a string.')
+    return `${name}_${globalCount}`
+  }
+
+  const subnetPlaces = R.map(p => R.assoc('name', namespaceSubnet(p.name), p), subnetNonInitialPlaces)
   parentNet.places = R.concat(parentNet.places, subnetPlaces)
 
-  const initialTransitions = R.filter(isInitialTransition, subnet.transitions)
-  assert(R.all(singleInput, initialTransitions),
+  const initialSubnetTransitions = R.filter(isSubnetInitialTransition, subnet.transitions)
+  assert(R.all(singleInput, initialSubnetTransitions),
     am('Subnet has initial transition with multiple inputs.'))
 
   const collapsedTransitionLookup = R.fromPairs(R.map(t => [t.name, t], collapsedTransitions))
@@ -100,22 +120,22 @@ function expandWith (parentNet, subnetPlaceName) {
       return parentTransition.outputs
     }
 
-    return R.map(namespaceSubnet, t.outputs)
+    return R.map(o => R.assoc('dstPlace', namespaceSubnet(o.dstPlace), o), t.outputs)
   }
 
   const computeInputs = t => {
-    if (isInitialTransition(t)) {
+    if (isSubnetInitialTransition(t)) {
       const input = R.head(t.inputs)
       assert(input.srcTokenCount === 1, am(`[${t.name}] Initial transition input token count is not 1.`))
       return [{ srcPlace: subnetPlaceName, srcTokenCount: 1 }]
     }
 
-    return R.map(namespaceSubnet, t.inputs)
+    return R.map(i => R.assoc('srcPlace', namespaceSubnet(i.srcPlace), i), t.inputs)
   }
 
   const transformSubnetTransition = t => {
     return {
-      name: isTerminalTransition(t) ? t.name : namespaceSubnet(t),
+      name: isTerminalTransition(t) ? t.name : namespaceSubnet(t.name),
       tags: t.tags,
       inputs: computeInputs(t),
       outputs: computeOutputs(t)
@@ -127,9 +147,12 @@ function expandWith (parentNet, subnetPlaceName) {
   globalCount++
 }
 
-function expandNet (parentNet) {
-  const subnetNames = R.map(subnetName, R.filter(placeSubnet, parentNet.places))
-  R.forEach(subnet => expandWith(parentNet, subnet), subnetNames)
+function expandNet (parentNetName) {
+  const parentNet = nets[parentNetName]
+  assert(parentNet)
+  assert(parentNet.places, parentNet)
+  const subnetExpansionPlaces = R.filter(isSubnetPlace, parentNet.places)
+  R.forEach(place => expandWith(parentNet, place), subnetExpansionPlaces)
 }
 
 const filepath = process.argv[2]
@@ -139,4 +162,3 @@ const subnetArcs = R.unnest((R.map(computeSubnetArcs, R.values(nets))))
 const netDependencies = R.reverse(toposort(subnetArcs))
 assert(rootNet.name === R.last(netDependencies))
 R.forEach(expandNet, netDependencies)
-console.log(netDependencies)
