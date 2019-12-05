@@ -107,9 +107,12 @@ function expandWith (parentNet, expansionPlace) {
     am('Has collapsed transition with multiple inputs.'))
   const collapsedTransitionNames = toSortedTransitionNames(collapsedTransitions)
   assert(R.equals(subnetTerminalTransitionNames, collapsedTransitionNames),
-    am('Collapsed transitions differ from subnet terminal transitions.' +
-      `\n${parentName}: ${collapsedTransitionNames}` +
-      `\n${subnetPlaceName}: ${subnetTerminalTransitionNames}`))
+    am(
+      'Collapsed transitions differ from subnet terminal transitions.' +
+      `\nMissing from ${parentName}: [${R.difference(subnetTerminalTransitionNames, collapsedTransitionNames)}]` +
+      `\nMissing from ${subnetPlaceName}: [${R.difference(collapsedTransitionNames, subnetTerminalTransitionNames)}]`
+    )
+  )
 
   // parent places remain the same
   // add namespaced subplaces, except for initial place
@@ -163,12 +166,11 @@ function expandWith (parentNet, expansionPlace) {
   const subnetTransitions = R.map(transformSubnetTransition, subnet.transitions)
   parentNet.transitions = R.concat(parentNet.transitions, subnetTransitions)
   subnetCounter[expansionPlaceName]++
-  pp(parentNet)
 }
 
 function expandNet (parentNetName) {
   const parentNet = nets[parentNetName]
-  assert(parentNet)
+  assert(parentNet, `No such parent net ${[parentNetName]}`)
   assert(parentNet.places, parentNet)
   const subnetExpansionPlaces = R.filter(isSubnetPlace, parentNet.places)
   R.forEach(place => expandWith(parentNet, place), subnetExpansionPlaces)
