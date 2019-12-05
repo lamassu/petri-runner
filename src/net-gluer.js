@@ -36,7 +36,15 @@ function loadNet (net) {
   }
 }
 
-const placeSubnet = r => R.find(R.test(/^[A-Z]/), r.tags)
+const subnetName = place => {
+  const subnets = R.filter(R.test(/^[A-Z]/), place.tags)
+  assert(subnets.length >= 1, `Place ${place.name} has multiple subnet tags.`)
+  return R.isEmpty(subnets) ? null : R.head(subnets)
+}
+
+const placeSubnet = place => {
+  return !R.isNil(subnetName(place))
+}
 
 function loadNets (netStructure) {
   R.forEach(loadNet, netStructure)
@@ -64,7 +72,7 @@ function expandWith (parentNet, subnetPlaceName) {
   const subnetTerminalTransitionNames = toSortedTransitionNames(subnetTerminalTransitions)
 
   const isInitialTransition = R.pipe(R.prop('inputs'), R.includes(subnetPlaceName))
-  const collapsedTransitions = R.filter(transitionFromSubnetPlace, parentNet.transitions)
+  const collapsedTransitions = R.filter(isInitialTransition, parentNet.transitions)
   const singleInput = R.pipe(R.prop('inputs'), R.length, R.equals(1))
   assert(R.all(singleInput, collapsedTransitions),
     am('Has collapsed transition with multiple inputs.'))
@@ -117,27 +125,18 @@ function expandWith (parentNet, subnetPlaceName) {
   const subnetTransitions = R.map(transformSubnetTransition, subnet.transitions)
   parentNet.transitions = R.concat(parentNet.transitions, subnetTransitions)
   globalCount++
-
-  // What about numbered subnets (more than one call to a subnet in a parent net, so it has to be numbered). We need to
-  // recognize the subnet and handle it properly.
 }
 
 function expandNet (parentNet) {
-  const subnetNames = R.map(R.prop('name'), R.filter(placeSubnet, parentNet.places))
+  const subnetNames = R.map(subnetName, R.filter(placeSubnet, parentNet.places))
   R.forEach(subnet => expandWith(parentNet, subnet), subnetNames)
 }
-
-// const consoleTap = R.tap(console.log)
 
 const filepath = process.argv[2]
 const netStructure = JSON.parse(fs.readFileSync(filepath))
 loadNets(netStructure)
 const subnetArcs = R.unnest((R.map(computeSubnetArcs, R.values(nets))))
 const netDependencies = R.reverse(toposort(subnetArcs))
+assert(rootNet.name === R.last(netDependencies))
 R.forEach(expandNet, netDependencies)
 console.log(netDependencies)
-
-/*
-* Work up dependency list from the bottom, gluing along the way.
-* Be careful about namespacing and separately namespacing duplicated subnets.
-*/
