@@ -1,14 +1,18 @@
 const fs = require('fs')
 const assert = require('assert')
+const util = require('util')
 
 const toposort = require('toposort')
 const R = require('ramda')
 
 let rootNet
-let globalCount = 0
 
 const nets = {}
 const subnetCounter = {}
+
+function pp (o) {
+  console.log(util.inspect(o, { depth: null, colors: true }))
+}
 
 function bail (msg) {
   console.log(`error: ${msg}`)
@@ -27,12 +31,15 @@ function loadNet (net) {
 
   const initialPlace = initialPlaces[0]
 
-  const validName = R.complement(R.contains('_'))
-  assert(R.all(R.propSatisfies(validName, 'name'), net.places), `[${net.name}] Place name contains underscore`)
-  const validateTransition = t => validName(t.name) &&
-    R.all(R.propSatisfies(validName, 'srcPlace'), t.inputs) &&
-    R.all(R.propSatisfies(validName, 'dstPlace'), t.outputs)
-  assert(R.all(validateTransition, net.transitions), `[${net.name}] Transition contains underscore`)
+  const invalidName = R.contains('_')
+  const invalidPlaceName = R.either(invalidName, R.test(/^[^A-Z]/))
+  const invalidTransitionName = R.either(invalidName, R.test(/^[^a-z]/))
+
+  const invalidPlace = R.find(R.propSatisfies(invalidPlaceName, 'name'), net.places)
+  assert(!invalidPlace, `[${net.name}] Has invalid place name: ${R.prop('name', invalidPlace)}.`)
+
+  const invalidTransition = R.find(R.propSatisfies(invalidTransitionName, 'name'), net.transitions)
+  assert(!invalidTransition, `[${net.name}] Has invalid transitions name: ${R.prop('name', invalidTransition)}.`)
 
   nets[net.name] = net
   subnetCounter[net.name] = 0
@@ -69,6 +76,8 @@ function expandWith (parentNet, expansionPlace) {
   assert(subnetPlaceName)
   const am = s => `${parentName} <- ${subnetPlaceName}: ${s}`
   const subnet = nets[subnetPlaceName]
+  const subnetCount = subnetCounter[subnetPlaceName]
+
   const parentName = parentNet.name
   console.log(`Processing ${parentName} <- ${subnetPlaceName}...`)
   assert(subnet, am('No such subnet.'))
@@ -109,9 +118,8 @@ function expandWith (parentNet, expansionPlace) {
   const namespaceSubnet = name => {
     // format is <name>_<scope>_<hierarchy-count-1>_<hierarchy-count-2>...
     assert(R.is(String, name), 'subnetName is not a string.')
-    const parts = R.split('_', name)
-    if (parts.length === 1) return `${name}_${subnetPlaceName}_${globalCount}`
-    return `${name}_${globalCount}`
+    if (R.contains('_', name)) return name
+    return `${name}_${subnetPlaceName}_${subnetCount}`
   }
 
   const subnetPlaces = R.map(p => R.assoc('name', namespaceSubnet(p.name), p), subnetNonInitialPlaces)
@@ -154,7 +162,8 @@ function expandWith (parentNet, expansionPlace) {
 
   const subnetTransitions = R.map(transformSubnetTransition, subnet.transitions)
   parentNet.transitions = R.concat(parentNet.transitions, subnetTransitions)
-  globalCount++
+  subnetCounter[expansionPlaceName]++
+  pp(parentNet)
 }
 
 function expandNet (parentNetName) {
