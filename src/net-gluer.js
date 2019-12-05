@@ -168,9 +168,9 @@ function expandWith (parentNet, expansionPlace) {
   subnetCounter[expansionPlaceName]++
 }
 
-function expandNet (parentNetName) {
+function expandNet (parentNetName, dependants) {
   const parentNet = nets[parentNetName]
-  assert(parentNet, `No such parent net ${[parentNetName]}`)
+  assert(parentNet, `No such parent net ${[parentNetName]} (dependants: [${dependants}])`)
   assert(parentNet.places, parentNet)
   const subnetExpansionPlaces = R.filter(isSubnetPlace, parentNet.places)
   R.forEach(place => expandWith(parentNet, place), subnetExpansionPlaces)
@@ -180,6 +180,13 @@ const filepath = process.argv[2]
 const netStructure = JSON.parse(fs.readFileSync(filepath))
 loadNets(netStructure)
 const subnetArcs = R.unnest((R.map(computeSubnetArcs, R.values(nets))))
+
+const dependencyLookup = {}
+const buildLookup = arc => {
+  dependencyLookup[arc[1]] = R.append(arc[0], dependencyLookup[arc[1]])
+}
+R.forEach(buildLookup, subnetArcs)
+
 const netDependencies = R.reverse(toposort(subnetArcs))
 assert(rootNet.name === R.last(netDependencies))
-R.forEach(expandNet, netDependencies)
+R.forEach(r => expandNet(r, dependencyLookup[r]), netDependencies)
