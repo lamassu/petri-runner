@@ -2,8 +2,10 @@ const fs = require('fs')
 const assert = require('assert')
 const util = require('util')
 
-const toposort = require('toposort')
+const graphlib = require('@dagrejs/graphlib')
 const R = require('ramda')
+
+const Graph = graphlib.Graph
 
 let rootNet
 
@@ -176,6 +178,7 @@ function expandNet (parentNetName, dependants) {
   R.forEach(place => expandWith(parentNet, place), subnetExpansionPlaces)
 }
 
+const depGraph = new Graph()
 const filepath = process.argv[2]
 const netStructure = JSON.parse(fs.readFileSync(filepath))
 loadNets(netStructure)
@@ -187,6 +190,13 @@ const buildLookup = arc => {
 }
 R.forEach(buildLookup, subnetArcs)
 
-const netDependencies = R.reverse(toposort(subnetArcs))
+R.forEach(a => depGraph.setEdge(a[0], a[1]), subnetArcs)
+const connectedNodes = graphlib.alg.preorder(depGraph, rootNet.name)
+const allNetNames = R.union(depGraph.nodes(), R.map(R.prop('name'), netStructure))
+const unconnectedNodes = R.difference(allNetNames, connectedNodes)
+R.forEach(n => depGraph.removeNode(n), unconnectedNodes)
+const netDependencies = R.reverse(graphlib.alg.topsort(depGraph))
 assert(rootNet.name === R.last(netDependencies))
 R.forEach(r => expandNet(r, dependencyLookup[r]), netDependencies)
+
+// Validate collapsed transition labels

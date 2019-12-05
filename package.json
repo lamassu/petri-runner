@@ -4,9 +4,8 @@
   "description": "",
   "main": "index.js",
   "dependencies": {
-    "longjohn": "^0.2.12",
+    "@dagrejs/graphlib": "^2.1.4",
     "ramda": "^0.26.1",
-    "toposort": "^2.0.2",
     "xml2json": "^0.11.2"
   },
   "devDependencies": {},
