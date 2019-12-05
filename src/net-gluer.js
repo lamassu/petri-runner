@@ -27,6 +27,13 @@ function loadNet (net) {
 
   const initialPlace = initialPlaces[0]
 
+  const validName = R.complement(R.contains('_'))
+  assert(R.all(R.propSatisfies(validName, 'name'), net.places), `[${net.name}] Place name contains underscore`)
+  const validateTransition = t => validName(t.name) &&
+    R.all(R.propSatisfies(validName, 'srcPlace'), t.inputs) &&
+    R.all(R.propSatisfies(validName, 'dstPlace'), t.outputs)
+  assert(R.all(validateTransition, net.transitions), `[${net.name}] Transition contains underscore`)
+
   nets[net.name] = net
   subnetCounter[net.name] = 0
 
@@ -100,7 +107,10 @@ function expandWith (parentNet, expansionPlace) {
   const subnetNonInitialPlaces = R.reject(isInitialPlace, subnet.places)
 
   const namespaceSubnet = name => {
+    // format is <name>_<scope>_<hierarchy-count-1>_<hierarchy-count-2>...
     assert(R.is(String, name), 'subnetName is not a string.')
+    const parts = R.split('_', name)
+    if (parts.length === 1) return `${name}_${subnetPlaceName}_${globalCount}`
     return `${name}_${globalCount}`
   }
 
