@@ -77,6 +77,13 @@ function computeSubnetArcs (parentNet) {
   return R.map(R.pair(parentNetName), subnetNames)
 }
 
+function duplicates (arr) {
+  const counts = {}
+  const updateCount = r => { counts[r] = R.defaultTo(0, counts[r]) + 1 }
+  R.forEach(updateCount, arr)
+  return R.filter(r => counts[r] > 1, arr)
+}
+
 function expandWith (parentNet, expansionPlace) {
   const expansionPlaceName = expansionPlace.name
   const subnetPlaceName = subnetName(expansionPlace)
@@ -133,7 +140,7 @@ function expandWith (parentNet, expansionPlace) {
   const namespaceSubnet = name => {
     // format is <name>_<scope>_<hierarchy-count-1>_<hierarchy-count-2>...
     assert(R.is(String, name), 'subnetName is not a string.')
-    if (R.contains('_', name)) return name
+    if (R.contains('_', name)) return `${name}_${subnetCount}`
     return `${name}_${subnetPlaceName}_${subnetCount}`
   }
 
@@ -209,4 +216,6 @@ const netDependencies = R.reverse(graphlib.alg.topsort(depGraph))
 assert(rootNet.name === R.last(netDependencies))
 R.forEach(r => expandNet(r, dependencyLookup[r]), netDependencies)
 
-// Validate collapsed transition labels
+const allPlaces = R.map(R.prop('name'), rootNet.places)
+assert(R.isEmpty(duplicates(allPlaces)))
+pp(rootNet)
