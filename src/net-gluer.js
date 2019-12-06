@@ -11,7 +11,7 @@ const Graph = graphlib.Graph
 let rootNet
 
 const nets = {}
-const subnetCounter = {}
+const subnetLookup = { root: 0 }
 
 function warn (msg) {
   console.log(chalk.yellow(chalk.bold('WARNING: '), msg))
@@ -49,7 +49,6 @@ function loadNet (net) {
   assert(!invalidTransition, `[${net.name}] Has invalid transitions name: ${R.prop('name', invalidTransition)}.`)
 
   nets[net.name] = net
-  subnetCounter[net.name] = 0
 
   if (R.includes('root', initialPlace.tags)) {
     rootNet = net
@@ -86,11 +85,15 @@ function duplicates (arr) {
 
 function expandWith (parentNet, expansionPlace) {
   const expansionPlaceName = expansionPlace.name
+
+  const oldSubnetId = subnetLookup[expansionPlaceName]
+  const subnetId = R.isNil(oldSubnetId) ? R.length(R.keys(subnetLookup)) : oldSubnetId
+  if (R.isNil(oldSubnetId)) subnetLookup[expansionPlaceName] = subnetId
+
   const subnetPlaceName = subnetName(expansionPlace)
   assert(subnetPlaceName)
   const am = s => `${parentName} <- ${subnetPlaceName}: ${s}`
   const subnet = nets[subnetPlaceName]
-  const subnetCount = subnetCounter[subnetPlaceName]
 
   const parentName = parentNet.name
   assert(subnet, am('No such subnet.'))
@@ -138,10 +141,10 @@ function expandWith (parentNet, expansionPlace) {
   const subnetNonInitialPlaces = R.reject(isInitialPlace, subnet.places)
 
   const namespaceSubnet = name => {
-    // format is <name>_<scope>_<hierarchy-count-1>_<hierarchy-count-2>...
+    // format is <name>_<expansionPlaceName>_<expansionPlaceName>_...
     assert(R.is(String, name), 'subnetName is not a string.')
-    if (R.contains('_', name)) return `${name}_${subnetCount}`
-    return `${name}_${subnetPlaceName}_${subnetCount}`
+    if (R.contains('_', name)) return `${name}_${subnetId}`
+    return `${name}__${subnetId}`
   }
 
   const subnetPlaces = R.map(p => R.assoc('name', namespaceSubnet(p.name), p), subnetNonInitialPlaces)
@@ -184,7 +187,6 @@ function expandWith (parentNet, expansionPlace) {
 
   const subnetTransitions = R.map(transformSubnetTransition, subnet.transitions)
   parentNet.transitions = R.concat(parentNet.transitions, subnetTransitions)
-  subnetCounter[expansionPlaceName]++
 }
 
 function expandNet (parentNetName, dependants) {
@@ -218,4 +220,6 @@ R.forEach(r => expandNet(r, dependencyLookup[r]), netDependencies)
 
 const allPlaces = R.map(R.prop('name'), rootNet.places)
 assert(R.isEmpty(duplicates(allPlaces)))
-pp(rootNet)
+
+const subnets = R.sortBy(R.prop('1'), R.toPairs(subnetLookup))
+pp(subnets)
