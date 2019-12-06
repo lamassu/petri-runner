@@ -14,15 +14,15 @@ const nets = {}
 const subnetLookup = { root: 0 }
 
 function warn (msg) {
-  console.log(chalk.yellow(chalk.bold('WARNING: '), msg))
+  console.error(chalk.yellow(chalk.bold('WARNING: '), msg))
 }
 
 function pp (o) {
-  console.log(util.inspect(o, { depth: null, colors: true }))
+  console.error(util.inspect(o, { depth: null, colors: true }))
 }
 
 function bail (msg) {
-  console.log(`error: ${msg}`)
+  console.error(`error: ${msg}`)
   process.exit(1)
 }
 
@@ -32,7 +32,7 @@ function loadNet (net) {
   if (initialPlaces.length > 1) bail(`Multiple initial tags in net ${net.name}`)
 
   if (initialPlaces.length < 1) {
-    console.log(`No initial tags in net ${net.name}, skipping...`)
+    console.error(chalk.yellow(`No initial tags in net ${net.name}, skipping...`))
     return
   }
 
@@ -52,7 +52,7 @@ function loadNet (net) {
 
   if (R.includes('root', initialPlace.tags)) {
     rootNet = net
-    console.log(`${net.name} is root`)
+    console.error(`${net.name} is root`)
   }
 }
 
@@ -222,4 +222,15 @@ const allPlaces = R.map(R.prop('name'), rootNet.places)
 assert(R.isEmpty(duplicates(allPlaces)))
 
 const subnets = R.sortBy(R.prop('1'), R.toPairs(subnetLookup))
-pp(subnets)
+const output = { net: rootNet, subnets }
+console.log(JSON.stringify(output))
+
+// Note: each transition even will include a "context",
+// which is the subnet dependency path from the transition's subnet, up to the root.
+// This can be used to find the correct net for a firing transition. The firing message
+// can include a scoping context which can a subset of the context path.
+// Only matching transitions in that scoping context will fired.
+
+// Map expansionPlaceNames to subnetPlaceNames.
+// Dependency graph of expansionPlaceNames. Alternatively, forbid multiple subnets of same type in a net.
+// This will simplify a little, and we're not using this feature anyway.
