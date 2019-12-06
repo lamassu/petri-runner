@@ -149,8 +149,8 @@ Start with xml2json, consider camaro. Camaro will probably be safer due to expli
 
 ## Priorities
 
-1. Parse gspn file.
-2. Glue nets.
+1. Parse gspn file. (v)
+2. Glue nets. (v)
 3. Run net.
 4. Built-in timeouts.
 5. Auto-fire transitions.
