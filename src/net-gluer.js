@@ -225,12 +225,17 @@ const subnets = R.sortBy(R.prop('1'), R.toPairs(subnetLookup))
 const output = { net: rootNet, subnets }
 console.log(JSON.stringify(output))
 
-// Note: each transition even will include a "context",
-// which is the subnet dependency path from the transition's subnet, up to the root.
-// This can be used to find the correct net for a firing transition. The firing message
-// can include a scoping context which can a subset of the context path.
+// Note: The firing message
+// can include a scoping context which can be a subset of the context path.
 // Only matching transitions in that scoping context will fired.
 
 // Map expansionPlaceNames to subnetPlaceNames.
 // Dependency graph of expansionPlaceNames. Alternatively, forbid multiple subnets of same type in a net.
-// This will simplify a little, and we're not using this feature anyway.
+// This will simplify a little, and we're not using this feature anyway. **Do this**.
+
+// New tests:
+// All places mentioned in transitions are defined in places.
+// Check a sampling of paths.
+// Do lots of sampling tests on net-runner. Run a net with transitions, and check for correct marking.
+// Check for rejected transitions.
+// Check for correctly matched transitions. Might want to factor transition finding to its own module.

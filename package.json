@@ -6,6 +6,7 @@
   "dependencies": {
     "@dagrejs/graphlib": "^2.1.4",
     "chalk": "^3.0.0",
+    "dagre-d3": "^0.6.4",
     "ramda": "^0.26.1",
     "xml2json": "^0.11.2"
   },

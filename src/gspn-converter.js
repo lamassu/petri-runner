@@ -12,6 +12,7 @@ function convert (filepath) {
 
   const gspn = json.project.gspn
   const nets = R.map(processNet, gspn)
+
   console.log(JSON.stringify(nets, null, 2))
 }
 
