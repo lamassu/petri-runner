@@ -158,3 +158,5 @@ module.exports = { run, emitter }
 // Whenever the looping transition is fired, increment the looping firing count.
 // If the looping firing count is more than the bound, fire the abort
 // transition instead of the looping transition.
+// See how big the expanded nets are. If it's not a big problem to load them into memory, no point
+// in doing special logic.
