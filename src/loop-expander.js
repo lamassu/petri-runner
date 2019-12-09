@@ -1,13 +1,56 @@
 const assert = require('assert')
 const R = require('ramda')
+const { produce } = require('immer')
 
 // https://char0n.github.io/ramda-adjunct/2.23.0/RA.html#.Y
 // http://baconjs.github.io/api3/index.html
 // https://github.com/mostjs/core
 
+const duplicateNet = produce((draft, loopCount) => {
+  const namespace = name => {
+    return `${name}_${loopCount}`
+  }
+
+  draft.places.forEach(p => { p.name = namespace(p.name) })
+  draft.transitions.forEach(t => {
+    t.inputs.forEach(i => { i.srcPlace = namespace(i.srcPlace) })
+    t.outputs.forEach(i => { i.dstPlace = namespace(i.srcPlace) })
+  })
+})
+
+const integrateNet = (integratedNet, loopNet, loopNetIdx) => {
+  integratedNet.places.concat(loopNet.places)
+
+  const isLoopTransition = R.propSatisfies(R.any(R.startsWith('loop_')), 'tags')
+  const isNotLoopTransition = R.complement(isLoopTransition)
+
+  if (loopNetIdx === 0) {
+    // Remove loopTransition
+    integratedNet.transitions = loopNet.transitions.filter(isNotLoopTransition)
+    return
+  }
+
+  const isInitialPlace = R.propSatisfies(R.includes('initial'), 'tags')
+  const loopNetInitialPlace = R.find(isInitialPlace, loopNet.places)
+  assert(loopNetInitialPlace)
+
+  const loopNetInitialPlaceName = loopNetInitialPlace.name
+  const rerouteTransitions = t => {
+    if (isLoopTransition(t)) {
+      // Reroute
+      t.outputs[0].dstPlace = loopNetInitialPlaceName
+    }
+  }
+
+  integratedNet.transitions.concat(loopNet.transitions.filter(isNotAbortTransition))
+    .forEach(rerouteTransitions)
+}
+
 function expand (initialPlaceName, net) {
   const isLoopTransition = R.pipe(R.prop('outputs'), R.any(R.propEq('dstPlace', initialPlaceName)))
   const loopTransitions = R.filter(isLoopTransition, net.transitions)
+
+  // TODO: Ensure that loop label applies exactly when a transition is a loop transition
 
   if (loopTransitions.length === 0) return net
 

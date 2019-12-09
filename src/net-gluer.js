@@ -140,6 +140,7 @@ function expandWith (parentNet, expansionPlace) {
   // add namespaced subplaces, except for initial place
   const subnetNonInitialPlaces = R.reject(isInitialPlace, subnet.places)
 
+  // full namespacing: <name>___[<loop_count>_]<subnetId>__[<loop_count>]_<subnetId>__...
   const namespaceSubnet = name => {
     // format is <name>_<expansionPlaceName>_<expansionPlaceName>_...
     assert(R.is(String, name), 'subnetName is not a string.')
