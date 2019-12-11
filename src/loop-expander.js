@@ -1,40 +1,38 @@
 const assert = require('assert')
 const R = require('ramda')
 
-// https://char0n.github.io/ramda-adjunct/2.23.0/RA.html#.Y
-// http://baconjs.github.io/api3/index.html
-// https://github.com/mostjs/core
+const { isUnary, appendString, lensList } = require('./util')
 
-const appendString = R.flip(R.concat)
-
-const isUnary = R.pipe(R.length, R.eq(1))
-
-const lensList = pred => R.lens(
-  R.find(pred),
-  (v, o) => {
-    const idx = R.findIndex(pred, o)
-    return R.update(idx, v, o)
-  }
-)
+const hasTag = p => R.propSatisfies(R.includes(p), 'tags')
 
 const namespaceNet = loopCount => {
   const namespace = appendString(`_${loopCount}`)
 
-  const deepModifier = p => R.map(R.over(R.lensProp(p), namespace))
-  const modifier = (f, s) => R.over(R.lensProp(f), deepModifier(s))
+  const modifier = (f, s) => R.compose(
+    R.over(R.lensProp(f)),
+    R.map(R.over(R.lensProp(s), namespace))
+  )
+
   const nameModifier = R.over(R.lensProp('name'), namespace)
-  const transitionsModifier = R.map(R.compose(modifier('inputs', 'srcPlace'),
-    modifier('outputs', 'dstPlace'), nameModifier))
 
-  const placesModifier = R.map(R.over(R.lensProp('name'), namespace))
-  const netModifier = R.compose(R.over(R.lensProp('places'), placesModifier),
-    R.over(R.lensProp('transitions'), transitionsModifier))
+  const transitionMapper = R.map(
+    R.compose(
+      modifier('inputs', 'srcPlace'),
+      modifier('outputs', 'dstPlace')
+    ),
+    nameModifier
+  )
 
-  return netModifier
+  const placeMapper = R.map(nameModifier)
+
+  return R.compose(
+    R.over(R.lensProp('places'), placeMapper),
+    R.over(R.lensProp('transitions'), transitionMapper),
+    nameModifier
+  )
 }
 
 const integrateNet = (integratedNet, loopNet) => {
-  const hasTag = p => R.propSatisfies(R.includes(p), 'tags')
   const hasTagPrefix = p => R.propSatisfies(R.any(R.startsWith(p), 'tags'))
   const isLoopTransition = hasTagPrefix('loop_')
   const isAbortTransition = hasTag('abort')
@@ -87,7 +85,8 @@ function expandLoop (acc) {
   return { net, count: count + 1, expandedNet: nextExpandedNet }
 }
 
-function expand (initialPlaceName, net) {
+function expand (net) {
+  const initialPlaceName = R.compose(R.prop('name'), R.find(hasTag('initial')))(net.places)
   const isLoopTransition = R.pipe(R.prop('outputs'), R.any(R.propEq('dstPlace', initialPlaceName)))
   const loopTransitions = R.filter(isLoopTransition, net.transitions)
 
@@ -111,7 +110,7 @@ function expand (initialPlaceName, net) {
   assert(R.both(R.is(Number, loopCount), R.lt(10)), 'Loop tag must supply an integer less than 10.')
 
   const isFinishedLooping = R.propEq('count', loopCount)
-  R.until(isFinishedLooping, expandLoop, { net, count: 0 })
+  return R.prop('expandedNet', R.until(isFinishedLooping, expandLoop, { net, count: 0 }))
 }
 
 module.exports = { expand }
