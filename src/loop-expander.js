@@ -1,18 +1,21 @@
 const assert = require('assert')
 const R = require('ramda')
 
-const { isUnary, appendString, lensList } = require('./util')
+const { isUnary, appendString, lensList, pp } = require('./util')
 
 const hasTag = p => R.propSatisfies(R.includes(p), 'tags')
 
 const namespaceNet = loopCount => {
-  const namespace = appendString(`_${loopCount}`)
+  const namespace = R.tap(x => console.log('yo'), appendString(`_${loopCount}`))
 
   const modifier = (f, s) => R.compose(
     R.over(R.lensProp(f)),
     R.map(R.over(R.lensProp(s), namespace))
   )
 
+  console.log(loopCount)
+  console.log(modifier('inputs', 'srcPlace')({ inputs: [{ srcPlace: 'yyy' }] }))
+  process.exit()
   const nameModifier = R.over(R.lensProp('name'), namespace)
 
   const transitionMapper = R.map(
@@ -69,18 +72,27 @@ const integrateNet = (integratedNet, loopNet) => {
   const removeInitialPlaceTag = R.over(initialPlaceTagLens, R.reject(R.includes('initial')))
   const draftPlaceProcessor = R.when(isInitialPlace, removeInitialPlaceTag)
 
+  console.log('debug1')
   const places = R.concat(draftPlaceProcessor(draftNet.places), loopNet.places)
   const transitions = R.concat(draftTransitionProcessor(draftNet.transitions),
     pruneLoopNet(loopNet.transitions))
+
+  console.log('debug2')
 
   return { places, transitions, name: loopNet.name }
 }
 
 function expandLoop (acc) {
+  console.log('debug3')
   const { net, expandedNet, count } = acc
   const namespace = namespaceNet(count)
+  console.log('debug6')
+
   const loopNet = namespace(net)
+  console.log('debug5')
   const nextExpandedNet = integrateNet(expandedNet, loopNet)
+
+  console.log('debug4')
 
   return { net, count: count + 1, expandedNet: nextExpandedNet }
 }
@@ -97,20 +109,35 @@ function expand (net) {
   const loopTransition = R.head(loopTransitions)
   assert(loopTransition.outputs.length === 1, 'Loop transitions must have exactly one output arc.')
   assert(loopTransition.inputs.length === 1, 'Loop transitions must have exactly one input arc.')
-  const loopPlace = R.head(loopTransition.inputs).srcPlace
-  const isLoopPlaceTransition = R.pipe(R.prop('inputs'), R.any(R.propEq('srcPlace', loopPlace.name)))
-  const loopPlaceTransitions = R.filter(isLoopPlaceTransition, net.transitions)
-  assert(loopPlaceTransitions.length === 2, 'Loop place must have exactly two output transitions.')
-  // We already know that one of them is the loop transition
+  const loopPlaceName = R.head(loopTransition.inputs).srcPlace
 
-  const loopTags = R.filter(R.startsWith('loop_'), loopTransition.tags)
-  assert(R.pipe(R.length, R.equals(1))(loopTags))
+  const isLoopPlaceTransition = R.pipe(R.prop('inputs'), R.any(R.propEq('srcPlace', loopPlaceName)))
+  const loopPlaceTransitions = R.filter(isLoopPlaceTransition, net.transitions)
+
+  pp(loopPlaceTransitions)
+
+  const abortTransitionFilter = R.propSatisfies(R.includes('abort'), 'tags')
+  const abortTransitions = R.filter(abortTransitionFilter, loopPlaceTransitions)
+  assert(isUnary(abortTransitions))
+
+  const loopTransitionFilter = R.propSatisfies(R.any(R.startsWith('loop_')), 'tags')
+  const loopTags = R.filter(loopTransitionFilter, loopPlaceTransitions)
+
+  assert(isUnary(loopTags))
+
   const loopTag = R.head(loopTags)
   const loopCount = parseInt(R.takeLastWhile(x => x !== '_', loopTag))
   assert(R.both(R.is(Number, loopCount), R.lt(10)), 'Loop tag must supply an integer less than 10.')
+
+  // Make sure that no other transitions have these special labels
+  const countWhenEq = pred => count => list => R.equals(count, R.reduce(R.when(pred, R.inc), 0, list))
+  assert(countWhenEq(abortTransitionFilter, 1, net.transitions))
 
   const isFinishedLooping = R.propEq('count', loopCount)
   return R.prop('expandedNet', R.until(isFinishedLooping, expandLoop, { net, count: 0 }))
 }
 
-module.exports = { expand }
+module.exports = {
+  expand,
+  internal: { namespaceNet }
+}

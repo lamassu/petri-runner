@@ -3,7 +3,7 @@ const util = require('util')
 const R = require('ramda')
 
 const appendString = R.flip(R.concat)
-const isUnary = R.pipe(R.length, R.eq(1))
+const isUnary = R.pipe(R.length, R.equals(1))
 
 const lensList = pred => R.lens(
   R.find(pred),
