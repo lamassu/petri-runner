@@ -8,14 +8,14 @@ const nets = require('../build/nets/nets.json')
 
 const isNetName = name => R.find(R.propEq('name', name))
 
-// test('expand', t => {
-//   const net = isNetName('SmsHandleCode')(nets)
-//   const expandedNet = expand(net)
-//   pp(expandedNet)
-// })
+test('expand', t => {
+  const net = isNetName('SmsHandleCode')(nets)
+  const expandedNet = LE.expand(net)
+  pp(expandedNet)
+})
 
 test('namespaceNet', t => {
   const net = isNetName('SmsHandleCode')(nets)
-  const namespacedNet = LE.internal.namespaceNet(1)(net)
-  pp(namespacedNet)
+  LE.internal.namespaceNet(2)(net)
+  t.pass()
 })

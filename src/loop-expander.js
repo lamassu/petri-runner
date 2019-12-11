@@ -6,24 +6,18 @@ const { isUnary, appendString, lensList, pp } = require('./util')
 const hasTag = p => R.propSatisfies(R.includes(p), 'tags')
 
 const namespaceNet = loopCount => {
-  const namespace = R.tap(x => console.log('yo'), appendString(`_${loopCount}`))
+  const namespace = appendString(`_${loopCount}`)
 
-  const modifier = (f, s) => R.compose(
-    R.over(R.lensProp(f)),
-    R.map(R.over(R.lensProp(s), namespace))
-  )
+  const modifier = (func, f, s) => R.over(R.lensProp(f), R.map(R.over(R.lensProp(s), func)))
 
-  console.log(loopCount)
-  console.log(modifier('inputs', 'srcPlace')({ inputs: [{ srcPlace: 'yyy' }] }))
-  process.exit()
   const nameModifier = R.over(R.lensProp('name'), namespace)
 
   const transitionMapper = R.map(
     R.compose(
-      modifier('inputs', 'srcPlace'),
-      modifier('outputs', 'dstPlace')
-    ),
-    nameModifier
+      modifier(namespace, 'inputs', 'srcPlace'),
+      modifier(namespace, 'outputs', 'dstPlace'),
+      nameModifier
+    )
   )
 
   const placeMapper = R.map(nameModifier)
@@ -61,38 +55,42 @@ const integrateNet = (integratedNet, loopNet) => {
   )
 
   const removeLoopTransitionTag = R.over(loopTransitionTagLens, R.reject(R.startsWith('loop_')))
-  const draftTransitionProcessor = R.when(isLoopTransition,
-    R.compose(removeLoopTransitionTag, R.set(firstDstLens, loopNetInitialPlaceName)))
+  const draftTransitionProcessor = R.map(
+    R.when(isLoopTransition,
+      R.compose(removeLoopTransitionTag, R.set(firstDstLens, loopNetInitialPlaceName))
+    )
+  )
 
   const initialPlaceTagLens = R.compose(
-    R.lensProp('places'),
     lensList(isInitialPlace),
     R.lensProp('tags')
   )
-  const removeInitialPlaceTag = R.over(initialPlaceTagLens, R.reject(R.includes('initial')))
-  const draftPlaceProcessor = R.when(isInitialPlace, removeInitialPlaceTag)
+  const removeInitialPlaceTag = R.over(R.lensProp('tags'), R.reject(R.includes('initial')))
+  const draftPlaceProcessor = R.map(R.when(isInitialPlace, removeInitialPlaceTag))
 
+  // const draftPlaceProcessor = R.map(R.identity)
+
+  pp(draftNet.places)
+  pp(loopNet.places)
+  pp(draftPlaceProcessor(draftNet.places))
   console.log('debug1')
+
   const places = R.concat(draftPlaceProcessor(draftNet.places), loopNet.places)
+  console.log('debug2')
+
   const transitions = R.concat(draftTransitionProcessor(draftNet.transitions),
     pruneLoopNet(loopNet.transitions))
-
-  console.log('debug2')
+  console.log('debug3')
 
   return { places, transitions, name: loopNet.name }
 }
 
 function expandLoop (acc) {
-  console.log('debug3')
   const { net, expandedNet, count } = acc
   const namespace = namespaceNet(count)
-  console.log('debug6')
 
   const loopNet = namespace(net)
-  console.log('debug5')
   const nextExpandedNet = integrateNet(expandedNet, loopNet)
-
-  console.log('debug4')
 
   return { net, count: count + 1, expandedNet: nextExpandedNet }
 }
@@ -113,8 +111,6 @@ function expand (net) {
 
   const isLoopPlaceTransition = R.pipe(R.prop('inputs'), R.any(R.propEq('srcPlace', loopPlaceName)))
   const loopPlaceTransitions = R.filter(isLoopPlaceTransition, net.transitions)
-
-  pp(loopPlaceTransitions)
 
   const abortTransitionFilter = R.propSatisfies(R.includes('abort'), 'tags')
   const abortTransitions = R.filter(abortTransitionFilter, loopPlaceTransitions)
