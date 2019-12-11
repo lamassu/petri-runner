@@ -5,10 +5,13 @@
   "main": "index.js",
   "dependencies": {
     "@dagrejs/graphlib": "^2.1.4",
+    "@most/core": "^1.5.0",
+    "@most/scheduler": "^1.2.3",
     "chalk": "^3.0.0",
     "dagre-d3": "^0.6.4",
     "immer": "^5.0.0",
     "ramda": "^0.26.1",
+    "ramda-adjunct": "^2.23.0",
     "xml2json": "^0.11.2"
   },
   "devDependencies": {},

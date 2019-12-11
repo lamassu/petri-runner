@@ -1,49 +1,73 @@
 const assert = require('assert')
 const R = require('ramda')
-const { produce } = require('immer')
+const M = require('@most/core')
+const { newDefaultScheduler } = require('@most/scheduler')
 
 // https://char0n.github.io/ramda-adjunct/2.23.0/RA.html#.Y
 // http://baconjs.github.io/api3/index.html
 // https://github.com/mostjs/core
 
-const duplicateNet = produce((draft, loopCount) => {
-  const namespace = name => {
-    return `${name}_${loopCount}`
-  }
+const appendString = R.flip(R.concat)
 
-  draft.places.forEach(p => { p.name = namespace(p.name) })
-  draft.transitions.forEach(t => {
-    t.inputs.forEach(i => { i.srcPlace = namespace(i.srcPlace) })
-    t.outputs.forEach(i => { i.dstPlace = namespace(i.srcPlace) })
-  })
-})
+const namespaceNet = loopCount => {
+  const namespace = appendString(`_${loopCount}`)
 
-const integrateNet = (integratedNet, loopNet, loopNetIdx) => {
-  integratedNet.places.concat(loopNet.places)
+  const deepModifier = p => R.map(R.over(R.lensProp(p), namespace))
+  const modifier = (f, s) => R.over(R.lensProp(f), deepModifier(s))
+  const nameModifier = R.over(R.lensProp('name'), namespace)
+  const transitionsModifier = R.map(R.compose(modifier('inputs', 'srcPlace'),
+    modifier('outputs', 'dstPlace'), nameModifier))
 
-  const isLoopTransition = R.propSatisfies(R.any(R.startsWith('loop_')), 'tags')
-  const isNotLoopTransition = R.complement(isLoopTransition)
+  const placesModifier = R.map(R.over(R.lensProp('name'), namespace))
+  const netModifier = R.compose(R.over(R.lensProp('places'), placesModifier),
+    R.over(R.lensProp('transitions'), transitionsModifier))
 
-  if (loopNetIdx === 0) {
-    // Remove loopTransition
-    integratedNet.transitions = loopNet.transitions.filter(isNotLoopTransition)
-    return
-  }
+  return netModifier
+}
 
-  const isInitialPlace = R.propSatisfies(R.includes('initial'), 'tags')
+const integrateNet = (integratedNet, loopNet) => {
+  const hasTag = p => R.propSatisfies(R.includes(p), 'tags')
+  const hasTagPrefix = p => R.propSatisfies(R.any(R.startsWith(p), 'tags'))
+  const isLoopTransition = hasTagPrefix('loop_')
+  const isAbortTransition = hasTag('abort')
+  const isTerminalNet = R.isNil(integratedNet)
+  const omitTerminalTransitionF = isTerminalNet ? isLoopTransition : isAbortTransition
+  const removeTerminalTransition = R.reject(omitTerminalTransitionF)
+  const isInitialPlace = hasTag('initial')
+
+  const draftNet = R.defaultTo({ places: [], transitions: [] }, integratedNet)
+
   const loopNetInitialPlace = R.find(isInitialPlace, loopNet.places)
   assert(loopNetInitialPlace)
-
   const loopNetInitialPlaceName = loopNetInitialPlace.name
-  const rerouteTransitions = t => {
-    if (isLoopTransition(t)) {
-      // Reroute
-      t.outputs[0].dstPlace = loopNetInitialPlaceName
-    }
+
+  const firstDstLens = R.lensPath(['outputs', 0, 'dstPlace'])
+
+  const pruneLoopNet = R.filter(removeTerminalTransition)
+  const removeLoopTransitionTag = R.over(loopTransitionTagLens, removeLoopTag)
+  const draftTransitionProcessor = R.when(isLoopTransition,
+    R.compose(removeLoopTransitionTag, R.set(firstDstLens, loopNetInitialPlaceName)))
+
+  const removeInitialPlaceTag = R.over(initialPlaceTagLens, removeInitialTag)
+  const draftPlaceProcessor = R.when(isInitialPlace, removeInitialPlaceTag)
+
+  const places = R.concat(draftPlaceProcessor(draftNet.places), loopNet.places)
+  const transitions = R.concat(draftTransitionProcessor(draftNet.transitions),
+    pruneLoopNet(loopNet.transitions))
+
+  return { places, transitions, name: loopNet.name }
+}
+
+function expandLoop (acc, net) {
+  const loopNet = namespaceNet(net)
+  if (!acc) {
+    return { net: loopNet, count: 0 }
   }
 
-  integratedNet.transitions.concat(loopNet.transitions.filter(isNotAbortTransition))
-    .forEach(rerouteTransitions)
+  const loopCount = acc.count
+  const expandedNet = integrateNet(loopCount, loopNet, acc.net)
+
+  return { net: expandedNet, count: loopCount + 1 }
 }
 
 function expand (initialPlaceName, net) {
@@ -65,10 +89,15 @@ function expand (initialPlaceName, net) {
   assert(loopPlaceTransitions.length === 2, 'Loop place must have exactly two output transitions.')
   // We already know that one of them is the loop transition
 
-  const duplicatedNets = R.times(duplicateNet(net, initialPlaceName), loopCount)
-  // These sets up the core nets, next we can R.scan through them and fix them up. duplicateNet just does namespacing.
-  // R.scan should start from the terminal subnet, so 0 is the terminal subnet.
-  // https://github.com/immerjs/immer
+  const loopTags = R.filter(R.startsWith('loop_'), loopTransition.tags)
+  assert(R.pipe(R.length, R.equals(1))(loopTags))
+  const loopTag = R.head(loopTags)
+  const loopCount = parseInt(R.takeLastWhile(x => x !== '_', loopTag))
+  assert(R.is(Number, loopCount), 'Loop tag must supply an integer.')
+
+  const processor = R.compose(M.take(loopCount), M.scan(expandLoop, undefined), M.constant(net))
+  const stream = processor(M.periodic(0))
+  M.runEffects(stream, newDefaultScheduler()).catch(console.log)
 }
 
 module.exports = { expand }
