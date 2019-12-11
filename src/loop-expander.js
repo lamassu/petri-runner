@@ -1,13 +1,21 @@
 const assert = require('assert')
 const R = require('ramda')
-const M = require('@most/core')
-const { newDefaultScheduler } = require('@most/scheduler')
 
 // https://char0n.github.io/ramda-adjunct/2.23.0/RA.html#.Y
 // http://baconjs.github.io/api3/index.html
 // https://github.com/mostjs/core
 
 const appendString = R.flip(R.concat)
+
+const isUnary = R.pipe(R.length, R.eq(1))
+
+const lensList = pred => R.lens(
+  R.find(pred),
+  (v, o) => {
+    const idx = R.findIndex(pred, o)
+    return R.update(idx, v, o)
+  }
+)
 
 const namespaceNet = loopCount => {
   const namespace = appendString(`_${loopCount}`)
@@ -44,11 +52,23 @@ const integrateNet = (integratedNet, loopNet) => {
   const firstDstLens = R.lensPath(['outputs', 0, 'dstPlace'])
 
   const pruneLoopNet = R.filter(removeTerminalTransition)
-  const removeLoopTransitionTag = R.over(loopTransitionTagLens, removeLoopTag)
+
+  const loopTransitionTagLens = R.compose(
+    R.lensProp('transitions'),
+    lensList(isLoopTransition),
+    R.lensProp('tags')
+  )
+
+  const removeLoopTransitionTag = R.over(loopTransitionTagLens, R.reject(R.startsWith('loop_')))
   const draftTransitionProcessor = R.when(isLoopTransition,
     R.compose(removeLoopTransitionTag, R.set(firstDstLens, loopNetInitialPlaceName)))
 
-  const removeInitialPlaceTag = R.over(initialPlaceTagLens, removeInitialTag)
+  const initialPlaceTagLens = R.compose(
+    R.lensProp('places'),
+    lensList(isInitialPlace),
+    R.lensProp('tags')
+  )
+  const removeInitialPlaceTag = R.over(initialPlaceTagLens, R.reject(R.includes('initial')))
   const draftPlaceProcessor = R.when(isInitialPlace, removeInitialPlaceTag)
 
   const places = R.concat(draftPlaceProcessor(draftNet.places), loopNet.places)
@@ -58,27 +78,22 @@ const integrateNet = (integratedNet, loopNet) => {
   return { places, transitions, name: loopNet.name }
 }
 
-function expandLoop (acc, net) {
-  const loopNet = namespaceNet(net)
-  if (!acc) {
-    return { net: loopNet, count: 0 }
-  }
+function expandLoop (acc) {
+  const { net, expandedNet, count } = acc
+  const namespace = namespaceNet(count)
+  const loopNet = namespace(net)
+  const nextExpandedNet = integrateNet(expandedNet, loopNet)
 
-  const loopCount = acc.count
-  const expandedNet = integrateNet(loopCount, loopNet, acc.net)
-
-  return { net: expandedNet, count: loopCount + 1 }
+  return { net, count: count + 1, expandedNet: nextExpandedNet }
 }
 
 function expand (initialPlaceName, net) {
   const isLoopTransition = R.pipe(R.prop('outputs'), R.any(R.propEq('dstPlace', initialPlaceName)))
   const loopTransitions = R.filter(isLoopTransition, net.transitions)
 
-  // TODO: Ensure that loop label applies exactly when a transition is a loop transition
+  if (R.isEmpty(loopTransitions)) return net
 
-  if (loopTransitions.length === 0) return net
-
-  assert(loopTransitions.length === 1, 'Subnets cannot have more than one loop transition.')
+  assert(isUnary(loopTransitions), 'Subnets cannot have more than one loop transition.')
 
   const loopTransition = R.head(loopTransitions)
   assert(loopTransition.outputs.length === 1, 'Loop transitions must have exactly one output arc.')
@@ -93,11 +108,10 @@ function expand (initialPlaceName, net) {
   assert(R.pipe(R.length, R.equals(1))(loopTags))
   const loopTag = R.head(loopTags)
   const loopCount = parseInt(R.takeLastWhile(x => x !== '_', loopTag))
-  assert(R.is(Number, loopCount), 'Loop tag must supply an integer.')
+  assert(R.both(R.is(Number, loopCount), R.lt(10)), 'Loop tag must supply an integer less than 10.')
 
-  const processor = R.compose(M.take(loopCount), M.scan(expandLoop, undefined), M.constant(net))
-  const stream = processor(M.periodic(0))
-  M.runEffects(stream, newDefaultScheduler()).catch(console.log)
+  const isFinishedLooping = R.propEq('count', loopCount)
+  R.until(isFinishedLooping, expandLoop, { net, count: 0 })
 }
 
 module.exports = { expand }
