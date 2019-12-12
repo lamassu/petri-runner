@@ -12,6 +12,8 @@ test('expand', t => {
   const net = isNetName('SmsHandleCode')(nets)
   const expandedNet = LE.expand(net)
   pp(expandedNet)
+
+  // outermost loop transition not getting processed
 })
 
 test('namespaceNet', t => {

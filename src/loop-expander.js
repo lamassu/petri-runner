@@ -1,11 +1,14 @@
 const assert = require('assert')
 const R = require('ramda')
 
-const { isUnary, appendString, lensList, pp } = require('./util')
+const { isUnary, appendString, pp } = require('./util')
 
 const hasTag = p => R.propSatisfies(R.includes(p), 'tags')
 
 const namespaceNet = loopCount => {
+  // Outermost loop is regular net
+  if (loopCount === 0) return R.identity
+
   const namespace = appendString(`_${loopCount}`)
 
   const modifier = (func, f, s) => R.over(R.lensProp(f), R.map(R.over(R.lensProp(s), func)))
@@ -30,7 +33,7 @@ const namespaceNet = loopCount => {
 }
 
 const integrateNet = (integratedNet, loopNet) => {
-  const hasTagPrefix = p => R.propSatisfies(R.any(R.startsWith(p), 'tags'))
+  const hasTagPrefix = p => R.propSatisfies(R.any(R.startsWith(p)), 'tags')
   const isLoopTransition = hasTagPrefix('loop_')
   const isAbortTransition = hasTag('abort')
   const isTerminalNet = R.isNil(integratedNet)
@@ -40,47 +43,26 @@ const integrateNet = (integratedNet, loopNet) => {
 
   const draftNet = R.defaultTo({ places: [], transitions: [] }, integratedNet)
 
-  const loopNetInitialPlace = R.find(isInitialPlace, loopNet.places)
-  assert(loopNetInitialPlace)
-  const loopNetInitialPlaceName = loopNetInitialPlace.name
+  const initialPlaceName = R.when(R.complement(R.isNil), R.prop('name'), R.find(isInitialPlace, draftNet.places))
 
   const firstDstLens = R.lensPath(['outputs', 0, 'dstPlace'])
 
-  const pruneLoopNet = R.filter(removeTerminalTransition)
-
-  const loopTransitionTagLens = R.compose(
-    R.lensProp('transitions'),
-    lensList(isLoopTransition),
-    R.lensProp('tags')
-  )
-
-  const removeLoopTransitionTag = R.over(loopTransitionTagLens, R.reject(R.startsWith('loop_')))
-  const draftTransitionProcessor = R.map(
+  const removeLoopTransitionTag = R.over(R.lensProp('tags'), R.reject(R.startsWith('loop_')))
+  const transitionProcessor = R.map(
     R.when(isLoopTransition,
-      R.compose(removeLoopTransitionTag, R.set(firstDstLens, loopNetInitialPlaceName))
+      R.compose(removeLoopTransitionTag, R.set(firstDstLens, initialPlaceName))
     )
   )
 
-  const initialPlaceTagLens = R.compose(
-    lensList(isInitialPlace),
-    R.lensProp('tags')
-  )
   const removeInitialPlaceTag = R.over(R.lensProp('tags'), R.reject(R.includes('initial')))
   const draftPlaceProcessor = R.map(R.when(isInitialPlace, removeInitialPlaceTag))
 
-  // const draftPlaceProcessor = R.map(R.identity)
-
-  pp(draftNet.places)
-  pp(loopNet.places)
-  pp(draftPlaceProcessor(draftNet.places))
-  console.log('debug1')
-
   const places = R.concat(draftPlaceProcessor(draftNet.places), loopNet.places)
-  console.log('debug2')
 
-  const transitions = R.concat(draftTransitionProcessor(draftNet.transitions),
-    pruneLoopNet(loopNet.transitions))
-  console.log('debug3')
+  const transitions = R.concat(
+    draftNet.transitions,
+    R.compose(removeTerminalTransition, transitionProcessor)(loopNet.transitions)
+  )
 
   return { places, transitions, name: loopNet.name }
 }
@@ -92,7 +74,7 @@ function expandLoop (acc) {
   const loopNet = namespace(net)
   const nextExpandedNet = integrateNet(expandedNet, loopNet)
 
-  return { net, count: count + 1, expandedNet: nextExpandedNet }
+  return { net, count: count - 1, expandedNet: nextExpandedNet }
 }
 
 function expand (net) {
@@ -117,20 +99,23 @@ function expand (net) {
   assert(isUnary(abortTransitions))
 
   const loopTransitionFilter = R.propSatisfies(R.any(R.startsWith('loop_')), 'tags')
-  const loopTags = R.filter(loopTransitionFilter, loopPlaceTransitions)
+  const loopTagTransitions = R.filter(loopTransitionFilter, loopPlaceTransitions)
 
+  assert(isUnary(loopTagTransitions))
+  const loopTagTransition = R.head(loopTagTransitions)
+  const loopTags = R.filter(R.startsWith('loop_'), loopTagTransition.tags)
   assert(isUnary(loopTags))
-
   const loopTag = R.head(loopTags)
-  const loopCount = parseInt(R.takeLastWhile(x => x !== '_', loopTag))
-  assert(R.both(R.is(Number, loopCount), R.lt(10)), 'Loop tag must supply an integer less than 10.')
+  const loopCountStr = R.takeLastWhile(x => x !== '_', loopTag)
+  const loopCount = parseInt(loopCountStr)
+  assert(R.both(R.is(Number), R.gt(10))(loopCount), 'Loop tag must supply an integer less than 10.')
 
   // Make sure that no other transitions have these special labels
   const countWhenEq = pred => count => list => R.equals(count, R.reduce(R.when(pred, R.inc), 0, list))
   assert(countWhenEq(abortTransitionFilter, 1, net.transitions))
 
-  const isFinishedLooping = R.propEq('count', loopCount)
-  return R.prop('expandedNet', R.until(isFinishedLooping, expandLoop, { net, count: 0 }))
+  const isFinishedLooping = R.propEq('count', -1)
+  return R.prop('expandedNet', R.until(isFinishedLooping, expandLoop, { net, count: loopCount - 1 }))
 }
 
 module.exports = {
