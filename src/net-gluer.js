@@ -1,10 +1,12 @@
 const fs = require('fs')
 const assert = require('assert')
-const util = require('util')
 
 const graphlib = require('@dagrejs/graphlib')
 const R = require('ramda')
 const chalk = require('chalk')
+
+const { isUnary, isTerminalTransition } = require('./util')
+const loopExpander = require('./loop-expander')
 
 const Graph = graphlib.Graph
 
@@ -15,10 +17,6 @@ const subnetLookup = { root: 0 }
 
 function warn (msg) {
   console.error(chalk.yellow(chalk.bold('WARNING: '), msg))
-}
-
-function pp (o) {
-  console.error(util.inspect(o, { depth: null, colors: true }))
 }
 
 function bail (msg) {
@@ -38,7 +36,7 @@ function loadNet (net) {
 
   const initialPlace = initialPlaces[0]
 
-  const invalidName = R.contains('_')
+  const invalidName = R.contains('__')
   const invalidPlaceName = R.either(invalidName, R.test(/^[^A-Z]/))
   const invalidTransitionName = R.either(invalidName, R.test(/^[^a-z]/))
 
@@ -67,7 +65,8 @@ const isSubnetPlace = place => {
 }
 
 function loadNets (netStructure) {
-  R.forEach(loadNet, netStructure)
+  const loader = R.pipe(loopExpander.expand, loadNet)
+  R.forEach(loader, netStructure)
 }
 
 function computeSubnetArcs (parentNet) {
@@ -107,11 +106,12 @@ function expandWith (parentNet, expansionPlace) {
   const subnetInitialPlace = R.head(subnetInitialPlaces)
   assert(subnetInitialPlace.name === subnetPlaceName, am('Subnet initial place incorrectly named.'))
   const toSortedTransitionNames = R.pipe(R.map(R.prop('name')), R.sortBy(R.identity))
-  const isTerminalTransition = r => R.isEmpty(r.outputs)
 
   assert(subnet.transitions)
   const subnetTerminalTransitions = R.filter(isTerminalTransition, subnet.transitions)
   const subnetTerminalTransitionNames = toSortedTransitionNames(subnetTerminalTransitions)
+  const isTransitionSingleSource = R.propSatisfies(isUnary, 'inputs')
+  assert(R.all(isTransitionSingleSource, subnetTerminalTransitions), am('Terminal transitions must have single source.'))
 
   const isParentInitialTransition = R.pipe(R.prop('inputs'), R.any(R.propEq('srcPlace', expansionPlaceName)))
   const isSubnetInitialTransition = R.pipe(R.prop('inputs'), R.any(R.propEq('srcPlace', subnetPlaceName)))
@@ -140,12 +140,12 @@ function expandWith (parentNet, expansionPlace) {
   // add namespaced subplaces, except for initial place
   const subnetNonInitialPlaces = R.reject(isInitialPlace, subnet.places)
 
-  // full namespacing: <name>___[<loop_count>_]<subnetId>__[<loop_count>]_<subnetId>__...
+  // full namespacing: <name>___<subnetId>__<subnetId>...
   const namespaceSubnet = name => {
-    // format is <name>_<expansionPlaceName>_<expansionPlaceName>_...
+    // format is <name>__<expansionPlaceName>__<expansionPlaceName>_...
     assert(R.is(String, name), 'subnetName is not a string.')
-    if (R.contains('_', name)) return `${name}_${subnetId}`
-    return `${name}__${subnetId}`
+    if (R.contains('___', name)) return `${name}__${subnetId}`
+    return `${name}___${subnetId}`
   }
 
   const subnetPlaces = R.map(p => R.assoc('name', namespaceSubnet(p.name), p), subnetNonInitialPlaces)
@@ -198,33 +198,41 @@ function expandNet (parentNetName, dependants) {
   R.forEach(place => expandWith(parentNet, place), subnetExpansionPlaces)
 }
 
-const depGraph = new Graph()
-const filepath = process.argv[2]
-const netStructure = JSON.parse(fs.readFileSync(filepath))
-loadNets(netStructure)
-const subnetArcs = R.unnest((R.map(computeSubnetArcs, R.values(nets))))
+function run (netStructure) {
+  const depGraph = new Graph()
+  loadNets(netStructure)
+  const subnetArcs = R.unnest((R.map(computeSubnetArcs, R.values(nets))))
 
-const dependencyLookup = {}
-const buildLookup = arc => {
-  dependencyLookup[arc[1]] = R.append(arc[0], dependencyLookup[arc[1]])
+  const dependencyLookup = {}
+  const buildLookup = arc => {
+    dependencyLookup[arc[1]] = R.append(arc[0], dependencyLookup[arc[1]])
+  }
+  R.forEach(buildLookup, subnetArcs)
+
+  R.forEach(a => depGraph.setEdge(a[0], a[1]), subnetArcs)
+  const connectedNodes = graphlib.alg.preorder(depGraph, rootNet.name)
+  const allNetNames = R.union(depGraph.nodes(), R.map(R.prop('name'), netStructure))
+  const unconnectedNodes = R.difference(allNetNames, connectedNodes)
+  R.forEach(n => depGraph.removeNode(n), unconnectedNodes)
+  const netDependencies = R.reverse(graphlib.alg.topsort(depGraph))
+  assert(rootNet.name === R.last(netDependencies))
+  R.forEach(r => expandNet(r, dependencyLookup[r]), netDependencies)
+
+  const allPlaces = R.map(R.prop('name'), rootNet.places)
+  assert(R.isEmpty(duplicates(allPlaces)))
+
+  const subnets = R.sortBy(R.prop('1'), R.toPairs(subnetLookup))
+  const output = { net: rootNet, subnets }
+  console.log(JSON.stringify(output))
 }
-R.forEach(buildLookup, subnetArcs)
 
-R.forEach(a => depGraph.setEdge(a[0], a[1]), subnetArcs)
-const connectedNodes = graphlib.alg.preorder(depGraph, rootNet.name)
-const allNetNames = R.union(depGraph.nodes(), R.map(R.prop('name'), netStructure))
-const unconnectedNodes = R.difference(allNetNames, connectedNodes)
-R.forEach(n => depGraph.removeNode(n), unconnectedNodes)
-const netDependencies = R.reverse(graphlib.alg.topsort(depGraph))
-assert(rootNet.name === R.last(netDependencies))
-R.forEach(r => expandNet(r, dependencyLookup[r]), netDependencies)
+function cli () {
+  const filepath = process.argv[2]
+  const netStructure = JSON.parse(fs.readFileSync(filepath))
+  run(netStructure)
+}
 
-const allPlaces = R.map(R.prop('name'), rootNet.places)
-assert(R.isEmpty(duplicates(allPlaces)))
-
-const subnets = R.sortBy(R.prop('1'), R.toPairs(subnetLookup))
-const output = { net: rootNet, subnets }
-console.log(JSON.stringify(output))
+module.exports = { run }
 
 // Note: The firing message
 // can include a scoping context which can be a subset of the context path.

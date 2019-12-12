@@ -15,4 +15,6 @@ const lensList = pred => R.lens(
 
 const pp = o => console.log(util.inspect(o, { colors: true, depth: null }))
 
-module.exports = { appendString, isUnary, lensList, pp }
+const isTerminalTransition = R.propSatisfies(R.isEmpty, 'outputs')
+
+module.exports = { appendString, isUnary, isTerminalTransition, lensList, pp }
