@@ -11,9 +11,8 @@ const isNetName = name => R.find(R.propEq('name', name))
 test('expand', t => {
   const net = isNetName('SmsHandleCode')(nets)
   const expandedNet = LE.expand(net)
+  console.log('debughere')
   pp(expandedNet)
-
-  // outermost loop transition not getting processed
 })
 
 test('namespaceNet', t => {

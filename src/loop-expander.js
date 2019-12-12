@@ -1,9 +1,12 @@
 const assert = require('assert')
 const R = require('ramda')
+const RA = require('ramda-adjunct')
 
 const { isUnary, appendString, isTerminalTransition, pp } = require('./util')
 
 const hasTag = p => R.propSatisfies(R.includes(p), 'tags')
+
+const debug = x => console.log('debug' + x)
 
 const namespaceNet = loopCount => {
   const namespace = appendString(`_${loopCount}`)
@@ -38,9 +41,10 @@ const integrateNet = (integratedNet, loopNet) => {
   const removeTerminalTransition = R.reject(omitTerminalTransitionF)
   const isInitialPlace = hasTag('initial')
 
+  debug(1)
   const draftNet = R.defaultTo({ places: [], transitions: [] }, integratedNet)
 
-  const initialPlaceName = R.when(R.complement(R.isNil), R.prop('name'), R.find(isInitialPlace, draftNet.places))
+  const initialPlaceName = R.when(RA.isNotNil, R.prop('name'), R.find(isInitialPlace, draftNet.places))
 
   const firstDstLens = R.lensPath(['outputs', 0, 'dstPlace'])
 
@@ -50,6 +54,8 @@ const integrateNet = (integratedNet, loopNet) => {
       R.compose(removeLoopTransitionTag, R.set(firstDstLens, initialPlaceName))
     )
   )
+
+  debug(2)
 
   const removeInitialPlaceTag = R.over(R.lensProp('tags'), R.reject(R.includes('initial')))
   const draftPlaceProcessor = R.map(R.when(isInitialPlace, removeInitialPlaceTag))
@@ -61,6 +67,8 @@ const integrateNet = (integratedNet, loopNet) => {
     R.compose(removeTerminalTransition, transitionProcessor)(loopNet.transitions)
   )
 
+  debug(3)
+
   return { places, transitions, name: loopNet.name }
 }
 
@@ -69,7 +77,11 @@ function expandLoop (acc) {
   const namespace = namespaceNet(count)
 
   const loopNet = namespace(net)
+  debug(8)
+
   const nextExpandedNet = integrateNet(expandedNet, loopNet)
+
+  debug(9)
 
   return { net, count: count - 1, expandedNet: nextExpandedNet }
 }
@@ -81,8 +93,9 @@ function expand (net) {
 
   if (R.isEmpty(loopTransitions)) return net
 
+  debug(4)
+
   console.log(net.name)
-  pp(loopTransitions)
   assert(loopTransitions.length <= 1, 'Subnets cannot have more than one loop transition.')
 
   const loopTransition = R.head(loopTransitions)
@@ -97,6 +110,8 @@ function expand (net) {
   const abortTransitions = R.filter(abortTransitionFilter, loopPlaceTransitions)
   assert(isUnary(abortTransitions))
 
+  debug(5)
+
   const loopTransitionFilter = R.propSatisfies(R.any(R.startsWith('loop_')), 'tags')
   const loopTagTransitions = R.filter(loopTransitionFilter, loopPlaceTransitions)
 
@@ -109,21 +124,25 @@ function expand (net) {
   const loopCount = parseInt(loopCountStr)
   assert(R.both(R.is(Number), R.gt(10))(loopCount), 'Loop tag must supply an integer less than 10.')
 
+  debug(6)
+
   // Make sure that no other transitions have these special labels
   const countWhenEq = pred => count => list => R.equals(count, R.reduce(R.when(pred, R.inc), 0, list))
   assert(countWhenEq(abortTransitionFilter, 1, net.transitions))
 
   const isFinishedLooping = R.propEq('count', -1)
-  return R.prop('expandedNet', R.until(isFinishedLooping, expandLoop, { net, count: loopCount - 1 }))
-}
+  const loopedNet = R.prop('expandedNet',
+    R.until(isFinishedLooping, expandLoop, { net, count: loopCount - 1 }))
 
-module.exports = {
-  expand,
-  internal: { namespaceNet }
+  debug(10)
+
+  const packaged = packageLoopedNet(loopedNet)
+  debug(12)
+  return packaged
 }
 
 function packageLoopedNet (net) {
-  const unindex = R.takeLastWhile(x => x !== '_')
+  const unindex = R.takeWhile(x => x !== '_')
   const unindexedName = R.pipe(R.prop('name'), unindex)
   const [terminalTransitions, nonTerminalTransitions] =
     R.partition(isTerminalTransition, net.transitions)
@@ -132,31 +151,48 @@ function packageLoopedNet (net) {
 
   const toPlaceName = name => R.concat(R.toUpper(R.head(name)), R.tail(name))
   const createNewPlace = name => ({ name: toPlaceName(name), tags: [], tokenCount: 0 })
-  const createNewPlaces = R.pipe(R.keys, R.map(createNewPlace))
 
-  const createNewTransitions = name => ({
+  const createNewTransition = name => ({
     name,
     tags: [],
     inputs: [{ srcPlace: toPlaceName(name), srcTokenCount: 1 }],
     outputs: []
   })
 
-  const transformTerminalTransition = (transition, group) => {
-    return R.set(R.lensProp('outputs'),
-      { dstPlace: toPlaceName(group), dstTokenCount: 1 }, transition)
+  const transformTerminalTransitions = (transitions, group) => {
+    const transformTransition = R.set(R.lensProp('outputs'),
+      [{ dstPlace: toPlaceName(group), dstTokenCount: 1 }])
+    return R.map(transformTransition, transitions)
   }
 
   const isInitialPlace = R.propSatisfies(R.includes('initial'), 'tags')
   const initialPlaces = R.filter(isInitialPlace, net.places)
   assert(isUnary(initialPlaces))
-  const initialPlaceName = R.pipe(R.head, unindexedName)
+  const initialPlaceName = R.pipe(R.head, unindexedName)(initialPlaces)
   const newInitialPlace = { name: initialPlaceName, tags: ['initial'], tokenCount: 1 }
 
   const transformPlace = R.when(isInitialPlace, R.over(R.lensProp('name'), unindex))
 
+  const mapObjToValues = R.pipe(R.mapObjIndexed, R.values, R.unnest)
   const transitions = R.concat(
     nonTerminalTransitions,
-    R.mapObjIndexed(transformTerminalTransition, groupedTransitions),
+    mapObjToValues(transformTerminalTransitions, groupedTransitions),
+    R.map(createNewTransition, R.keys(groupedTransitions))
+  )
+
+  const places = R.concat(
+    [newInitialPlace],
+    R.map(createNewPlace, R.keys(groupedTransitions)),
+    R.map(transformPlace, net.places)
+  )
+
+  debug(11)
+  return { name: unindex(net.name), places, transitions }
+}
+
+module.exports = {
+  expand,
+  internal: { namespaceNet }
 }
 
 // Note: Need to handle terminal transitions.
