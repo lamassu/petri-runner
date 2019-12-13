@@ -5,7 +5,7 @@ const graphlib = require('@dagrejs/graphlib')
 const R = require('ramda')
 const chalk = require('chalk')
 
-const { isUnary, isTerminalTransition } = require('./util')
+const { isUnary, isTerminalTransition, pp } = require('./util')
 const loopExpander = require('./loop-expander')
 
 const Graph = graphlib.Graph
@@ -143,6 +143,7 @@ function expandWith (parentNet, expansionPlace) {
   // full namespacing: <name>___<subnetId>__<subnetId>...
   const namespaceSubnet = name => {
     // format is <name>__<expansionPlaceName>__<expansionPlaceName>_...
+    console.log(`name: ${name}`)
     assert(R.is(String, name), 'subnetName is not a string.')
     if (R.contains('___', name)) return `${name}__${subnetId}`
     return `${name}___${subnetId}`
@@ -160,10 +161,12 @@ function expandWith (parentNet, expansionPlace) {
   const computeOutputs = t => {
     if (isTerminalTransition(t)) {
       const parentTransition = collapsedTransitionLookup[t.name]
-      assert(parentTransition, 'No such collapsed transition in parent.')
+      assert(parentTransition, am(`No collapsed transition ${t.name} in parent.`))
       return parentTransition.outputs
     }
 
+    console.log('outputs')
+    pp(t.outputs)
     return R.map(o => R.assoc('dstPlace', namespaceSubnet(o.dstPlace), o), t.outputs)
   }
 

@@ -6,8 +6,6 @@ const { isUnary, appendString, isTerminalTransition, pp } = require('./util')
 
 const hasTag = p => R.propSatisfies(R.includes(p), 'tags')
 
-const debug = x => console.log('debug' + x)
-
 const namespaceNet = loopCount => {
   const namespace = appendString(`_${loopCount}`)
 
@@ -41,11 +39,11 @@ const integrateNet = (integratedNet, loopNet) => {
   const removeTerminalTransition = R.reject(omitTerminalTransitionF)
   const isInitialPlace = hasTag('initial')
 
-  debug(1)
   const draftNet = R.defaultTo({ places: [], transitions: [] }, integratedNet)
 
   const initialPlaceName = R.when(RA.isNotNil, R.prop('name'), R.find(isInitialPlace, draftNet.places))
-
+  pp(draftNet.places)
+  console.log(`initialPlaceName: ${initialPlaceName}`)
   const firstDstLens = R.lensPath(['outputs', 0, 'dstPlace'])
 
   const removeLoopTransitionTag = R.over(R.lensProp('tags'), R.reject(R.startsWith('loop_')))
@@ -55,19 +53,17 @@ const integrateNet = (integratedNet, loopNet) => {
     )
   )
 
-  debug(2)
-
   const removeInitialPlaceTag = R.over(R.lensProp('tags'), R.reject(R.includes('initial')))
   const draftPlaceProcessor = R.map(R.when(isInitialPlace, removeInitialPlaceTag))
 
   const places = R.concat(draftPlaceProcessor(draftNet.places), loopNet.places)
 
+  console.log('LOOPNET')
+  pp(loopNet.transitions)
   const transitions = R.concat(
     draftNet.transitions,
-    R.compose(removeTerminalTransition, transitionProcessor)(loopNet.transitions)
+    R.pipe(removeTerminalTransition, transitionProcessor)(loopNet.transitions)
   )
-
-  debug(3)
 
   return { places, transitions, name: loopNet.name }
 }
@@ -77,11 +73,8 @@ function expandLoop (acc) {
   const namespace = namespaceNet(count)
 
   const loopNet = namespace(net)
-  debug(8)
 
   const nextExpandedNet = integrateNet(expandedNet, loopNet)
-
-  debug(9)
 
   return { net, count: count - 1, expandedNet: nextExpandedNet }
 }
@@ -92,8 +85,6 @@ function expand (net) {
   const loopTransitions = R.filter(isLoopTransition, net.transitions)
 
   if (R.isEmpty(loopTransitions)) return net
-
-  debug(4)
 
   console.log(net.name)
   assert(loopTransitions.length <= 1, 'Subnets cannot have more than one loop transition.')
@@ -110,8 +101,6 @@ function expand (net) {
   const abortTransitions = R.filter(abortTransitionFilter, loopPlaceTransitions)
   assert(isUnary(abortTransitions))
 
-  debug(5)
-
   const loopTransitionFilter = R.propSatisfies(R.any(R.startsWith('loop_')), 'tags')
   const loopTagTransitions = R.filter(loopTransitionFilter, loopPlaceTransitions)
 
@@ -124,8 +113,6 @@ function expand (net) {
   const loopCount = parseInt(loopCountStr)
   assert(R.both(R.is(Number), R.gt(10))(loopCount), 'Loop tag must supply an integer less than 10.')
 
-  debug(6)
-
   // Make sure that no other transitions have these special labels
   const countWhenEq = pred => count => list => R.equals(count, R.reduce(R.when(pred, R.inc), 0, list))
   assert(countWhenEq(abortTransitionFilter, 1, net.transitions))
@@ -134,10 +121,8 @@ function expand (net) {
   const loopedNet = R.prop('expandedNet',
     R.until(isFinishedLooping, expandLoop, { net, count: loopCount - 1 }))
 
-  debug(10)
-
   const packaged = packageLoopedNet(loopedNet)
-  debug(12)
+  pp(packaged)
   return packaged
 }
 
@@ -168,25 +153,22 @@ function packageLoopedNet (net) {
   const isInitialPlace = R.propSatisfies(R.includes('initial'), 'tags')
   const initialPlaces = R.filter(isInitialPlace, net.places)
   assert(isUnary(initialPlaces))
-  const initialPlaceName = R.pipe(R.head, unindexedName)(initialPlaces)
-  const newInitialPlace = { name: initialPlaceName, tags: ['initial'], tokenCount: 1 }
 
   const transformPlace = R.when(isInitialPlace, R.over(R.lensProp('name'), unindex))
 
   const mapObjToValues = R.pipe(R.mapObjIndexed, R.values, R.unnest)
-  const transitions = R.concat(
+  const transitions = R.unnest([
     nonTerminalTransitions,
     mapObjToValues(transformTerminalTransitions, groupedTransitions),
     R.map(createNewTransition, R.keys(groupedTransitions))
-  )
+  ])
 
-  const places = R.concat(
-    [newInitialPlace],
+  const places = R.unnest([
     R.map(createNewPlace, R.keys(groupedTransitions)),
     R.map(transformPlace, net.places)
-  )
+  ])
 
-  debug(11)
+  console.log(`unindexed: ${unindex(net.name)}, ${net.name}`)
   return { name: unindex(net.name), places, transitions }
 }
 
@@ -195,10 +177,26 @@ module.exports = {
   internal: { namespaceNet }
 }
 
-// Note: Need to handle terminal transitions.
-// Number all subnets, even 0-idx subnet.
-// For each terminal transition group, after generating expanded net:
-// Create an unindexed place.
-// Connect all terminal transitions in the group to the place.
-// Create a new unindexed terminal transition from the place.
-// Unindex initial place name.
+// Look into first loopnet, where expandedNet is null. Don't want to set loopTransition on this.
+
+// The plot thickens: do we expand before looping or afterwards? Need to loop all the expansions.
+
+// Loop before: need to loop all subnets for each loop
+
+// 1. A contains B.
+// 2. A has a loop.
+// 3. We need to duplicate and namespace the subnet for each loop iteration and match up collapsed transitions with
+//   terminal transitions.
+// 4. If a place is a SubnetPlace and the place is namespaced with a loop index, we need to namespace the subnet as well.
+
+
+// Loop after: this means looping the expanded net
+
+// There will be multiple loops in the net which will not point to initial places. I think this is too complicated.
+
+// Consider a much simpler approach: selectively removing loop transitions for analysis.
+
+// Another possibility:
+// Instead of expanding loops after whole net is integrated, expand loops at each level of integration.
+// All previous loops will already have been expanded and there will be no loop tags for those.
+//
