@@ -13,7 +13,7 @@ const lensList = pred => R.lens(
   }
 )
 
-const pp = o => console.log(util.inspect(o, { colors: true, depth: null }))
+const pp = o => console.error(util.inspect(o, { colors: true, depth: null }))
 
 const isTerminalTransition = R.propSatisfies(R.isEmpty, 'outputs')
 
