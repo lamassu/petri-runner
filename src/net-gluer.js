@@ -65,7 +65,7 @@ function duplicates (arr) {
 
 const findNet = (netName, nets) => R.find(R.propEq('name', netName), nets)
 
-function expandWith (nets, parentNet, expansionPlace) {
+const expandWith = R.curry((nets, parentNet, net, expansionPlace) => {
   const expansionPlaceName = expansionPlace.name
 
   const oldSubnetId = subnetLookup[expansionPlaceName]
@@ -131,7 +131,7 @@ function expandWith (nets, parentNet, expansionPlace) {
   }
 
   const subnetPlaces = R.map(p => R.assoc('name', namespaceSubnet(p.name), p), subnetNonInitialPlaces)
-  parentNet.places = R.concat(parentNet.places, subnetPlaces)
+  // parentNet.places = R.concat(parentNet.places, subnetPlaces)
 
   const initialSubnetTransitions = R.filter(isSubnetInitialTransition, subnet.transitions)
   assert(R.all(singleInput, initialSubnetTransitions),
@@ -168,17 +168,26 @@ function expandWith (nets, parentNet, expansionPlace) {
     }
   }
 
+  // TODO: handle null accumulator net.
+  // Add/transform all places and transitions.
   const subnetTransitions = R.map(transformSubnetTransition, subnet.transitions)
-  parentNet.transitions = R.concat(parentNet.transitions, subnetTransitions)
-}
+  return R.over(R.lensProp('transitions'), R.concat(subnetTransitions), net)
+})
 
-function expandNet (nets, parentNetName, dependants) {
+const expandNet = R.curry((nets, netLookup, net, parentNetName) => {
+  const dependants = netLookup[parentNetName]
   const parentNet = findNet(parentNetName, nets)
   assert(parentNet, `No such parent net ${[parentNetName]} (dependants: [${dependants}])`)
   assert(parentNet.places)
   const subnetExpansionPlaces = R.filter(isSubnetPlace, parentNet.places)
-  R.forEach(place => expandWith(nets, parentNet, place), subnetExpansionPlaces)
-}
+
+  // Remember how we're building this up.
+  // Start with null accumulator and terminal net.
+  // accumulator is now terminal net.
+  // Get next net up, make changes to accumulator to expand.
+  // Keep moving up until root net.
+  return R.reduce(expandWith(nets, parentNet), net, subnetExpansionPlaces)
+})
 
 function run (nets) {
   const depGraph = new Graph()
@@ -200,13 +209,16 @@ function run (nets) {
   R.forEach(n => depGraph.removeNode(n), unconnectedNodes)
   const netDependencies = R.reverse(graphlib.alg.topsort(depGraph))
   assert(rootNet.name === R.last(netDependencies))
-  R.forEach(r => expandNet(nets, r, dependencyLookup[r]), netDependencies)
+
+  const expander = expandNet(nets, dependencyLookup)
+  pp(R.head(netDependencies))
+  const net = R.reduce(expander, null, netDependencies)
 
   const allPlaces = R.map(R.prop('name'), rootNet.places)
   assert(R.isEmpty(duplicates(allPlaces)))
 
   const subnets = R.sortBy(R.prop('1'), R.toPairs(subnetLookup))
-  return { net: rootNet, subnets }
+  return { net, subnets }
 }
 
 module.exports = { run }
