@@ -185,6 +185,9 @@ function expandWith (parentNet, expansionPlace) {
 
   const subnetTransitions = R.map(transformSubnetTransition, subnet.transitions)
   parentNet.transitions = R.concat(parentNet.transitions, subnetTransitions)
+
+  // TODO: reroute collapsed transitions.
+  // TODO: remove more side effects
 }
 
 function expandNet (parentNetName, dependants) {
