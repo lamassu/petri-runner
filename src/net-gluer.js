@@ -10,9 +10,6 @@ const loopExpander = require('./loop-expander')
 
 const Graph = graphlib.Graph
 
-let rootNet
-
-const nets = {}
 const subnetLookup = { root: 0 }
 
 function warn (msg) {
@@ -24,7 +21,7 @@ function bail (msg) {
   process.exit(1)
 }
 
-function loadNet (net) {
+function validateNet (net) {
   const initialPlaces = R.filter(r => R.includes('initial', r.tags), net.places)
 
   if (initialPlaces.length > 1) bail(`Multiple initial tags in net ${net.name}`)
@@ -33,8 +30,6 @@ function loadNet (net) {
     console.error(chalk.yellow(`No initial tags in net ${net.name}, skipping...`))
     return
   }
-
-  const initialPlace = initialPlaces[0]
 
   const invalidName = R.contains('__')
   const invalidPlaceName = R.either(invalidName, R.test(/^[^A-Z]/))
@@ -45,13 +40,6 @@ function loadNet (net) {
 
   const invalidTransition = R.find(R.propSatisfies(invalidTransitionName, 'name'), net.transitions)
   assert(!invalidTransition, `[${net.name}] Has invalid transitions name: ${R.prop('name', invalidTransition)}.`)
-
-  nets[net.name] = net
-
-  if (R.includes('root', initialPlace.tags)) {
-    rootNet = net
-    console.error(`${net.name} is root`)
-  }
 }
 
 const subnetName = place => {
@@ -62,11 +50,6 @@ const subnetName = place => {
 
 const isSubnetPlace = place => {
   return !R.isNil(subnetName(place))
-}
-
-function loadNets (netStructure) {
-  const loader = R.pipe(loopExpander.expand, loadNet)
-  R.forEach(loader, netStructure)
 }
 
 function computeSubnetArcs (parentNet) {
@@ -82,7 +65,9 @@ function duplicates (arr) {
   return R.filter(r => counts[r] > 1, arr)
 }
 
-function expandWith (parentNet, expansionPlace) {
+const findNet = (netName, nets) => R.find(R.propEq('name', netName), nets)
+
+function expandWith (nets, parentNet, expansionPlace) {
   const expansionPlaceName = expansionPlace.name
 
   const oldSubnetId = subnetLookup[expansionPlaceName]
@@ -92,7 +77,7 @@ function expandWith (parentNet, expansionPlace) {
   const subnetPlaceName = subnetName(expansionPlace)
   assert(subnetPlaceName)
   const am = s => `${parentName} <- ${subnetPlaceName}: ${s}`
-  const subnet = nets[subnetPlaceName]
+  const subnet = findNet(subnetPlaceName, nets)
 
   const parentName = parentNet.name
   assert(subnet, am('No such subnet.'))
@@ -193,18 +178,19 @@ function expandWith (parentNet, expansionPlace) {
   parentNet.transitions = R.concat(parentNet.transitions, subnetTransitions)
 }
 
-function expandNet (parentNetName, dependants) {
-  const parentNet = nets[parentNetName]
+function expandNet (nets, parentNetName, dependants) {
+  const parentNet = findNet(parentNetName, nets)
   assert(parentNet, `No such parent net ${[parentNetName]} (dependants: [${dependants}])`)
-  assert(parentNet.places, parentNet)
+  console.log(parentNet)
+  assert(parentNet.places)
   const subnetExpansionPlaces = R.filter(isSubnetPlace, parentNet.places)
   R.forEach(place => expandWith(parentNet, place), subnetExpansionPlaces)
 }
 
-function run (netStructure) {
+function run (nets) {
   const depGraph = new Graph()
-  loadNets(netStructure)
-  const subnetArcs = R.unnest((R.map(computeSubnetArcs, R.values(nets))))
+  R.forEach(validateNet, nets)
+  const subnetArcs = R.unnest((R.map(computeSubnetArcs, nets)))
 
   const dependencyLookup = {}
   const buildLookup = arc => {
@@ -213,8 +199,10 @@ function run (netStructure) {
   R.forEach(buildLookup, subnetArcs)
 
   R.forEach(a => depGraph.setEdge(a[0], a[1]), subnetArcs)
+  const isRoot = R.pipe(R.prop('places'), R.any(R.propSatisfies(R.includes('root'), 'tags')))
+  const rootNet = R.find(isRoot, nets)
   const connectedNodes = graphlib.alg.preorder(depGraph, rootNet.name)
-  const allNetNames = R.union(depGraph.nodes(), R.map(R.prop('name'), netStructure))
+  const allNetNames = R.union(depGraph.nodes(), R.map(R.prop('name'), nets))
   const unconnectedNodes = R.difference(allNetNames, connectedNodes)
   R.forEach(n => depGraph.removeNode(n), unconnectedNodes)
   const netDependencies = R.reverse(graphlib.alg.topsort(depGraph))

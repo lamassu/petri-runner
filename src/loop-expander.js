@@ -189,7 +189,6 @@ module.exports = {
 //   terminal transitions.
 // 4. If a place is a SubnetPlace and the place is namespaced with a loop index, we need to namespace the subnet as well.
 
-
 // Loop after: this means looping the expanded net
 
 // There will be multiple loops in the net which will not point to initial places. I think this is too complicated.
@@ -199,4 +198,5 @@ module.exports = {
 // Another possibility:
 // Instead of expanding loops after whole net is integrated, expand loops at each level of integration.
 // All previous loops will already have been expanded and there will be no loop tags for those.
-//
+// Currently, loop expansion is done all at once, on each subnet, before any expansion.
+// Idea is to expand loops for terminal subnet, integrate into next net, expand loops for that net, etc.
