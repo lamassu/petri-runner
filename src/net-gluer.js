@@ -1,12 +1,10 @@
-const fs = require('fs')
 const assert = require('assert')
 
 const graphlib = require('@dagrejs/graphlib')
 const R = require('ramda')
 const chalk = require('chalk')
 
-const { isUnary, isTerminalTransition, pp } = require('./util')
-const loopExpander = require('./loop-expander')
+const { isUnary, isTerminalTransition } = require('./util')
 
 const Graph = graphlib.Graph
 
@@ -65,8 +63,7 @@ const isSubnetPlace = place => {
 }
 
 function loadNets (netStructure) {
-  const loader = R.pipe(loopExpander.expand, loadNet)
-  R.forEach(loader, netStructure)
+  R.forEach(loadNet, netStructure)
 }
 
 function computeSubnetArcs (parentNet) {
@@ -143,7 +140,6 @@ function expandWith (parentNet, expansionPlace) {
   // full namespacing: <name>___<subnetId>__<subnetId>...
   const namespaceSubnet = name => {
     // format is <name>__<expansionPlaceName>__<expansionPlaceName>_...
-    console.log(`name: ${name}`)
     assert(R.is(String, name), 'subnetName is not a string.')
     if (R.contains('___', name)) return `${name}__${subnetId}`
     return `${name}___${subnetId}`
@@ -165,8 +161,6 @@ function expandWith (parentNet, expansionPlace) {
       return parentTransition.outputs
     }
 
-    console.log('outputs')
-    pp(t.outputs)
     return R.map(o => R.assoc('dstPlace', namespaceSubnet(o.dstPlace), o), t.outputs)
   }
 
@@ -226,13 +220,7 @@ function run (netStructure) {
 
   const subnets = R.sortBy(R.prop('1'), R.toPairs(subnetLookup))
   const output = { net: rootNet, subnets }
-  console.log(JSON.stringify(output))
-}
-
-function cli () {
-  const filepath = process.argv[2]
-  const netStructure = JSON.parse(fs.readFileSync(filepath))
-  run(netStructure)
+  return output
 }
 
 module.exports = { run }
