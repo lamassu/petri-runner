@@ -4,7 +4,7 @@ const graphlib = require('@dagrejs/graphlib')
 const R = require('ramda')
 const chalk = require('chalk')
 
-const { isUnary, isTerminalTransition, pp } = require('./util')
+const { isUnary, isTerminalTransition, pp, tapp } = require('./util')
 
 const Graph = graphlib.Graph
 
@@ -63,9 +63,9 @@ function duplicates (arr) {
   return R.filter(r => counts[r] > 1, arr)
 }
 
-const findNet = (netName, nets) => R.find(R.propEq('name', netName), nets)
+const findNet = R.curry((nets, netName) => R.find(R.propEq('name', netName), nets))
 
-const expandWith = R.curry((nets, parentNet, net, expansionPlace) => {
+const expandWith = R.curry((nets, parentNet, expansionPlace) => {
   const expansionPlaceName = expansionPlace.name
 
   const oldSubnetId = subnetLookup[expansionPlaceName]
@@ -75,7 +75,7 @@ const expandWith = R.curry((nets, parentNet, net, expansionPlace) => {
   const subnetPlaceName = subnetName(expansionPlace)
   assert(subnetPlaceName)
   const am = s => `${parentName} <- ${subnetPlaceName}: ${s}`
-  const subnet = findNet(subnetPlaceName, nets)
+  const subnet = findNet(nets, subnetPlaceName)
   const parentName = parentNet.name
   assert(subnet, am('No such subnet.'))
 
@@ -130,9 +130,6 @@ const expandWith = R.curry((nets, parentNet, net, expansionPlace) => {
     return `${name}___${subnetId}`
   }
 
-  const subnetPlaces = R.map(p => R.assoc('name', namespaceSubnet(p.name), p), subnetNonInitialPlaces)
-  // parentNet.places = R.concat(parentNet.places, subnetPlaces)
-
   const initialSubnetTransitions = R.filter(isSubnetInitialTransition, subnet.transitions)
   assert(R.all(singleInput, initialSubnetTransitions),
     am('Subnet has initial transition with multiple inputs.'))
@@ -168,25 +165,25 @@ const expandWith = R.curry((nets, parentNet, net, expansionPlace) => {
     }
   }
 
-  // TODO: handle null accumulator net.
-  // Add/transform all places and transitions.
-  const subnetTransitions = R.map(transformSubnetTransition, subnet.transitions)
-  return R.over(R.lensProp('transitions'), R.concat(subnetTransitions), net)
+  const transformNet = R.compose(
+    R.over(R.lensProp('places'),
+      R.concat(R.map(R.over(R.lensProp('name'), namespaceSubnet), subnetNonInitialPlaces))
+    ),
+    R.over(R.lensProp('transitions'),
+      R.pipe(
+        R.reject(isParentInitialTransition),
+        R.concat(R.map(transformSubnetTransition, subnet.transitions))
+      )
+    )
+  )
+
+  return transformNet(parentNet)
 })
 
-const expandNet = R.curry((nets, netLookup, net, parentNetName) => {
-  const dependants = netLookup[parentNetName]
-  const parentNet = findNet(parentNetName, nets)
-  assert(parentNet, `No such parent net ${[parentNetName]} (dependants: [${dependants}])`)
-  assert(parentNet.places)
+const expandNet = R.curry((nets, parentNet) => {
   const subnetExpansionPlaces = R.filter(isSubnetPlace, parentNet.places)
 
-  // Remember how we're building this up.
-  // Start with null accumulator and terminal net.
-  // accumulator is now terminal net.
-  // Get next net up, make changes to accumulator to expand.
-  // Keep moving up until root net.
-  return R.reduce(expandWith(nets, parentNet), net, subnetExpansionPlaces)
+  return R.append(R.reduce(expandWith(nets), parentNet, subnetExpansionPlaces), nets)
 })
 
 function run (nets) {
@@ -210,9 +207,8 @@ function run (nets) {
   const netDependencies = R.reverse(graphlib.alg.topsort(depGraph))
   assert(rootNet.name === R.last(netDependencies))
 
-  const expander = expandNet(nets, dependencyLookup)
-  pp(R.head(netDependencies))
-  const net = R.reduce(expander, null, netDependencies)
+  const sortedNets = R.map(findNet(nets), netDependencies)
+  const net = R.last(R.reduce(expandNet, [], sortedNets))
 
   const allPlaces = R.map(R.prop('name'), rootNet.places)
   assert(R.isEmpty(duplicates(allPlaces)))
