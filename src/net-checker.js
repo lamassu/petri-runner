@@ -1,5 +1,3 @@
-/* eslint-disable func-call-spacing, no-unexpected-multiline */
-const S = require('sanctuary')
 const R = require('ramda')
 
 let warnings = 0
@@ -25,15 +23,17 @@ const outArcCountLookup = {}
 // one automatic transition
 // or no automatic transitions
 function automaticTransitions (netRec) {
-  const pns = pn(S.prop ('subnets') (netRec))
-  const net = S.prop ('net') (netRec)
-  const autos = S.reject (t => S.any (S.test (/^[a-z]/)) (t.tags)) (net.transitions)
+  const pns = pn(netRec.subnets)
+  const net = netRec.net
+  const autos = R.reject(t => R.any(R.test(/^[a-z]/), t.tags), net.transitions)
 
   const isValidAuto = t => {
     const srcPlaceName = t.inputs[0].srcPlace
     const conflictingTransitions = outArcCountLookup[srcPlaceName]
     warn(conflictingTransitions.length === 1,
-      `[${pns(t.name)}] ${t.name} is auto and has conflicting transitions at ${srcPlaceName}: ${conflictingTransitions.join(', ')}.`)
+      `[${pns(t.name)}] ${t.name} is auto and has conflicting transitions ` +
+      `at ${srcPlaceName}: ${conflictingTransitions.join(', ')}.`
+    )
   }
 
   autos.forEach(isValidAuto)
@@ -56,6 +56,8 @@ function check (net) {
 module.exports = { check }
 
 const net = require('../build/nets/net.json')
+
+console.error('Checking expanded net.')
 check(net)
 
 if (warnings === 0) {
