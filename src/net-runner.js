@@ -95,7 +95,7 @@ function loadNet (netPath) {
   R.forEach(populateMarking, net.places)
 
   const populateTransition = t => {
-    const [, context] = R.split('__', t.name)
+    const [, context] = R.split('___', t.name)
     transitionLookup[context] = R.append(t.name, R.defaultTo([], transitionLookup[context]))
     transitions[t.name] = t
   }
