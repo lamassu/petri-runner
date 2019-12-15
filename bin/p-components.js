@@ -7,14 +7,13 @@ const component = process.argv[2]
 
 const componentLookup = {}
 nets.forEach(n => {
-  n.transitions.forEach(t => {
+  n.places.forEach(p => {
     const filter = tag => {
       return /^[A-Z]/.test(tag) ||
-        tag.startsWith('loop_') ||
-        tag.startsWith('timeout_') ||
-        tag === 'abort'
+      tag === 'initial' ||
+      tag === 'root'
     }
-    const tags = R.reject(filter, t.tags)
+    const tags = R.reject(filter, p.tags)
     if (tags.length > 1) {
       console.log(`WARN: More than one component tag: ${tags.join(', ')}`)
     }
@@ -28,22 +27,22 @@ console.log(`Components in system: ${components.join(', ')}.`)
 console.log()
 
 if (!component) {
-  console.error('Usage: node t-components.js <component-name>')
+  console.error('Usage: node p-components.js <component-name>')
   process.exit(1)
 }
 
-let transitions = []
+let places = []
 const subnets = netRec.subnets.map(s => s[0])
 subnets.forEach(s => {
   const n = nets.find(nn => nn.name === s)
-  const currentTransitions = n.transitions.filter(t => t.tags.includes(component))
-  transitions = transitions.concat(currentTransitions.map(t => ({ transition: t.name, net: n.name })))
+  const currentPlaces = n.places.filter(t => t.tags.includes(component))
+  places = places.concat(currentPlaces.map(p => ({ place: p.name, net: n.name })))
 })
 
-if (transitions.length === 0) {
-  console.log(`There are no transitions fired by ${component}.`)
+if (places.length === 0) {
+  console.log(`There are no places associated with ${component}.`)
   process.exit(0)
 }
 
-console.log(`The following ${transitions.length} transitions are fired by ${component}:`)
-console.log(transitions.map(t => `[${t.net}] ${t.transition}`).join('\n'))
+console.log(`The following ${places.length} places are associated with ${component}:`)
+console.log(places.map(p => `[${p.net}] ${p.place}`).join('\n'))

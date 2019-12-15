@@ -8,7 +8,7 @@ const { isUnary, isTerminalTransition, pp, tapp } = require('./util')
 
 const Graph = graphlib.Graph
 
-const subnetLookup = { root: 0 }
+const subnetLookup = {}
 
 function warn (msg) {
   console.error(chalk.yellow(chalk.bold('WARNING: '), msg))
@@ -212,6 +212,8 @@ function run (nets) {
 
   const allPlaces = R.map(R.prop('name'), rootNet.places)
   assert(R.isEmpty(duplicates(allPlaces)))
+
+  subnetLookup[rootNet.name] = R.length(R.keys(subnetLookup))
 
   const subnets = R.sortBy(R.prop('1'), R.toPairs(subnetLookup))
   return { net, subnets }
