@@ -1,5 +1,6 @@
+const assert = require('assert')
+
 const R = require('ramda')
-const { tapp } = require('./util')
 
 function convert (net) {
   const name = net.name
@@ -46,5 +47,11 @@ function convert (net) {
 
 module.exports = { convert }
 
-const net = require('../build/nets/net.json').net
+const netRec = require('../build/nets/net.json')
+const nets = require('../build/nets/nets.json')
+
+const netName = process.argv[2]
+const findNet = (nets, netName) => R.find(R.propEq('name', netName), nets)
+const net = netName ? findNet(nets, netName) : netRec.net
+assert(net)
 console.log(convert(net))

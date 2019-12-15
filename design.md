@@ -152,5 +152,68 @@ Start with xml2json, consider camaro. Camaro will probably be safer due to expli
 1. Parse gspn file. (v)
 2. Glue nets. (v)
 3. Run net.
-4. Built-in timeouts.
-5. Auto-fire transitions.
+4. Folds.
+5. Built-in timeouts.
+6. Auto-fire transitions.
+7. Loop constraints.
+
+## Firing
+
+We can model the PN as a stream transformer. The input stream is a stream of records of the type:
+
+```javascript
+{
+  transitionId: 'badPhoneNumber___2__3__8__11__19',
+  data: { phoneNumer: '97253162763726' }
+}
+```
+
+The stream is transformed into a stream of successful firing records and warning records:
+
+```javascript
+{
+  recordType: 'firing',
+  transitionId: 'badPhoneNumber___2__3__8__11__19',
+  data: { phoneNumer: '97253162763726' },
+  srcPlace: 'xxx',
+  dstPlace: 'yyy'
+}
+```
+
+And...
+
+```javascript
+{
+  recordType: 'warning',
+  warningType: 'transitionNotActive',
+  info: {
+    transitionId: 'badPhoneNumber___2__3__8__11__19',
+    data: { phoneNumer: '97253162763726' },
+    srcPlace: 'xxx',
+    dstPlace: 'yyy'
+  }
+}
+```
+
+A single source record can lead to multiple firing records, if automatic transitions exist. In fact, the net can start firing before any record events arrive from the source.
+
+## Looking up a transition to fire
+
+A big question is how will the source stream name the transitions it wants to fire.
+
+Let's look at a transition, say ``badPhoneNumber___2__3__8__11__19``. If we split it by the ``___`` token, we get ``name`` as the first part and ``context`` as the second part.
+
+If we provide only *name*, we have to worry about two issues:
+
+1. That name is used in multiple subnets. This can easily be solved by providing the subnet name, as well.
+2. The subnet that the transition is in was integrated in multiple places in the net and more than on of them is currently active. In this case, we can:
+  * Fire all of them. This could make sense. We could throw a warning as well.
+  * Fire none of them and throw an error. This doesn't sound good, as it turns our nice static design into a runtime error.
+
+Another route is to provide the entire context on each firing. This is very cumbersome to use, though.
+
+Another idea is to statically analyze whether the group of *name* transitions in the net can be active at the same time. This can be encoded into a lookup table so it can be used to determine at designe time whether a given transition needs more than just a name. This can be done for subnet namespacing, as well, although that might not be necessary. Alternately, we can only validate nets that don't have name-conflicting transitions.
+
+Using reachability graph, check if, for a giving marking state, multiple transitions of the same *name* can change the state. Can use R.countBy to do this easily. Test on some fake nets.
+
+For the meantime, we can assume that *name* is sufficient.
