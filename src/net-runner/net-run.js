@@ -5,18 +5,19 @@ const netState = require('./net-state')
 const { pp } = require('../util')
 
 // Move this back to previous
+
 const adjustMarking = (marking, transition) => {
   const def0 = R.defaultTo(0)
 
-  const adjustMarkingInput = i => {
+  const adjustMarkingInput = (marking, i) => {
     return R.over(R.lensProp(i.srcPlace), tks => def0(tks) - i.srcTokenCount, marking)
   }
 
-  const adjustMarkingOutput = o => {
+  const adjustMarkingOutput = (marking, o) => {
     return R.over(R.lensProp(o.dstPlace), tks => def0(tks) + o.dstTokenCount, marking)
   }
 
-  const adjustSubMarking = rec => {
+  const adjustSubMarking = (marking, rec) => {
     return rec.input
       ? adjustMarkingInput(marking, rec.input)
       : adjustMarkingOutput(marking, rec.output)
@@ -27,10 +28,7 @@ const adjustMarking = (marking, transition) => {
     R.map(R.objOf('output'), transition.outputs)
   )
 
-  pp(recs)
-  R.forEach(adjustSubMarking, recs)
-  pp(marking)
-  return R.pipe(R.toPairs, R.filter(r => r[1] > 0))(marking)
+  return R.reduce(adjustSubMarking, marking, recs)
 }
 
 const isActiveTransition = marking => t => {
@@ -77,12 +75,13 @@ function handler (prevRec, msg) {
   }
 
   const transition = R.head(activeTransitions)
+  const toArr = R.pipe(R.toPairs, R.filter(x => x[1] > 0))
 
   return {
     recordType: 'firing',
     transitionId: transition.name,
     data: msg.data,
-    marking: adjustMarking(marking, transition)
+    marking: toArr(adjustMarking(marking, transition))
   }
 }
 
