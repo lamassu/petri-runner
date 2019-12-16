@@ -1,7 +1,8 @@
 const R = require('ramda')
+const RA = require('ramda-adjunct')
 
 const { create } = require('most-subject')
-const { runEffects, map, merge, scan, periodic, withItems, tap } = require('@most/core')
+const { runEffects, map, merge, scan, periodic, withItems, tap, share } = require('@most/core')
 const { newDefaultScheduler } = require('@most/scheduler')
 
 const netRun = require('./net-run')
@@ -12,8 +13,10 @@ const { pp } = require('../util')
 function runPetriStream (eventStream, logic) {
   const [petriSink, petriProxy] = create()
 
+  const sharedPetri = share(petriProxy)
+  const autoStream = R.pipe(map(autoTransitions.mapper), filter(RA.isNotNil))
   const logicStream = map(logic, petriProxy)
-  const fullStream = merge(eventStream, logicStream)
+  const fullStream = merge(eventStream, logicStream, autoStream)
   const petriStream = scan(netRun.handler, { marking: netState.initialMarking() }, eventStream)
   petriSink.attach(petriStream)
 
