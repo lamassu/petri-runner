@@ -152,7 +152,7 @@ Start with xml2json, consider camaro. Camaro will probably be safer due to expli
 1. Parse gspn file. (v)
 2. Glue nets. (v)
 3. Run net.
-4. Folds.
+4. Folds. (built-in via mostjs streams).
 5. Built-in timeouts.
 6. Auto-fire transitions.
 7. Loop constraints.
@@ -163,7 +163,7 @@ We can model the PN as a stream transformer. The input stream is a stream of rec
 
 ```javascript
 {
-  transitionId: 'badPhoneNumber___2__3__8__11__19',
+  transitionName: 'badPhoneNumber',
   data: { phoneNumer: '97253162763726' }
 }
 ```
@@ -175,8 +175,7 @@ The stream is transformed into a stream of successful firing records and warning
   recordType: 'firing',
   transitionId: 'badPhoneNumber___2__3__8__11__19',
   data: { phoneNumer: '97253162763726' },
-  srcPlace: 'xxx',
-  dstPlace: 'yyy'
+  marking: {}
 }
 ```
 
@@ -191,7 +190,8 @@ And...
     data: { phoneNumer: '97253162763726' },
     srcPlace: 'xxx',
     dstPlace: 'yyy'
-  }
+  },
+  marking: {}
 }
 ```
 
@@ -217,3 +217,35 @@ Another idea is to statically analyze whether the group of *name* transitions in
 Using reachability graph, check if, for a giving marking state, multiple transitions of the same *name* can change the state. Can use R.countBy to do this easily. Test on some fake nets.
 
 For the meantime, we can assume that *name* is sufficient.
+
+## Timeouts
+
+There are a few options:
+
+* When transition is active, create a delayed firing. This is too messy.
+* Start a timer when transition is active. Timer is reset when transition becomes inactive or transition fires. If timer has expired, the transition becomes an *auto* transition. The question is how do we process this auto event? We need a delay event that would then check status. We can possibly cancel the delay event if the status changes. An easy way to do this is to merge in an ``_.at(30000)`` stream and instead of a firing event, give it a ``timeout_check event``. There's no real point in canceling this.
+
+## Transition classes
+
+We already met a class of transitions, namely all transitions with a given *name*. We can define other arbitrary classes, based on tags. For instance, we could define a *user_ok* class, that indicates that a user has confirmed the screen. We can statically analyze that no two transitions of this class can ever fire, similarly to how we do it in the case of *names*.
+
+This could much simplify code design, as every confirm button press could just generate a *user_tap* event. If done in combination with timeouts, we could really simplify many screens. We could do the same for *user_abort*. We could even create a *tap_or_timeout_30s* tag, although that's not a huge improvement over *user_tag,timeout_30s*.
+
+## Hooking up streams
+
+**Source stream**: Events from the machine/user.
+**Firing stream**: Scan over events stream with intial marking to produce new marking and firing/error records. Error records should show the unchanged last marking for easy scanning.
+
+**Button presses**: User input is a stream that is merged into *source stream*.
+**Bill validator output**: Bill validator output events are merged into *source stream*.
+**Bill validator input**: Bill validator input events are transformed from the firing stream and this is merged into the *bill validator output* stream. It is also tapped by the bill validator device to send commands.
+
+Same for other peripherals.
+
+**Screen**: *firing stream* is transformed into this.
+
+**logic**: This one transforms *firing stream* and possibly others and feeds back into *source stream*. Since it's circular, we might need: https://github.com/mostjs-community/subject
+
+However, we might not need *firing stream* as an input. If the logic part needs history, it can fold over *source stream* and just feed into *firing stream*. Example is *runAmlKycTier in AmlKyc subnet. We need info about the transaction in order to determine this. We also need to know when to fire the transition, so the circular stuff would help here. Also, although the source stream has history, we only know what actually fired from the *firing stream*.
+
+

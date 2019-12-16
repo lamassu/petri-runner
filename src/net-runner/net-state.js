@@ -2,16 +2,16 @@ const fs = require('fs')
 
 const R = require('ramda')
 
-const marking = {}
 const transitions = {}
 const transitionLookup = {}
+const initialMarking = {}
 
 function load (netPath) {
   const structure = JSON.parse(fs.readFileSync(netPath))
   const net = structure.net
 
   const populateMarking = p => {
-    if (p.tokenCount > 0) marking[p.name] = p.tokenCount
+    if (p.tokenCount > 0) initialMarking[p.name] = p.tokenCount
   }
   R.forEach(populateMarking, net.places)
 
@@ -23,22 +23,4 @@ function load (netPath) {
   R.forEach(populateTransition, net.transitions)
 }
 
-function adjustMarking (transition) {
-  const adjustMarkingInput = i => {
-    marking[i.srcPlace] = marking[i.srcPlace] - i.srcTokenCount
-  }
-
-  const adjustMarkingOutput = o => {
-    marking[o.dstPlace] = marking[o.dstPlace] + o.dstTokenCount
-  }
-
-  R.forEach(adjustMarkingInput, transition.inputs)
-  R.forEach(adjustMarkingOutput, transition.outputs)
-}
-
-const activeTransition = t => {
-  const validateInput = i => marking[i.srcPlace] >= i.srcTokenCount
-  return R.all(validateInput, t.inputs)
-}
-
-module.exports = { adjustMarking, activeTransition, load }
+module.exports = { load, initialMarking }
