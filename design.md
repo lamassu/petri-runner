@@ -248,4 +248,17 @@ Same for other peripherals.
 
 However, we might not need *firing stream* as an input. If the logic part needs history, it can fold over *source stream* and just feed into *firing stream*. Example is *runAmlKycTier in AmlKyc subnet. We need info about the transaction in order to determine this. We also need to know when to fire the transition, so the circular stuff would help here. Also, although the source stream has history, we only know what actually fired from the *firing stream*.
 
+This seems to be exactly the problem cycle.js was invented to handle.
 
+Can be handled with RxJs via a subject: https://stackoverflow.com/questions/34343869/how-to-handle-circularly-dependent-observables-in-rxjs/34364261#34364261
+Can use ``imitate`` from xstream.
+For mostjs, use: https://github.com/mostjs-community/subject
+For callbags: https://github.com/krawaller/callbag-proxy
+
+This is pretty confusing, but it looks like most-subject works just like xstream.imitate. See play/most-attach.js. However, doesn't seem to be working right.
+
+Try example with callbags and xstream.
+
+* Callbags could be interesting. Test file doesn't seem to work with combine or merge.
+
+**Summary**: latest play/most-attach.js seems to work well. Try going with this.
