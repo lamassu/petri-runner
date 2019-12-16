@@ -14,6 +14,6 @@ const events = tap(x => console.log(`evt: ${x}`), scan(x => x % 5 === 0 ? 1 : x 
 const first = tap(x => console.log(`1st: ${x}`), take(20, delay(100, combineArray((x, y) => x + y, [events, secondProxy]))))
 const second = scan((x, y) => x + (y * 10), 1, first)
 
+sink.attach(second)
 runEffects(tap(x => console.log(`2nd: ${x}`), take(20, second)), scheduler)
 
-sink.attach(second)

@@ -1,17 +1,22 @@
-const netState = require('net-state')
-
 const R = require('ramda')
 
-const adjustMarking = marking => transition => {
-  const adjustMarkingInput = (marking, i) => {
-    return R.over(R.lensProp('srcPlace'), tks => tks - i.srcTokenCount, marking)
+const netState = require('./net-state')
+
+const { pp } = require('../util')
+
+// Move this back to previous
+const adjustMarking = (marking, transition) => {
+  const def0 = R.defaultTo(0)
+
+  const adjustMarkingInput = i => {
+    return R.over(R.lensProp(i.srcPlace), tks => def0(tks) - i.srcTokenCount, marking)
   }
 
-  const adjustMarkingOutput = (marking, o) => {
-    return R.over(R.lensProp('dstPlace'), tks => tks + o.dstTokenCount, marking)
+  const adjustMarkingOutput = o => {
+    return R.over(R.lensProp(o.dstPlace), tks => def0(tks) + o.dstTokenCount, marking)
   }
 
-  const adjustSubMarking = (marking, rec) => {
+  const adjustSubMarking = rec => {
     return rec.input
       ? adjustMarkingInput(marking, rec.input)
       : adjustMarkingOutput(marking, rec.output)
@@ -22,7 +27,10 @@ const adjustMarking = marking => transition => {
     R.map(R.objOf('output'), transition.outputs)
   )
 
-  return R.reduce(adjustSubMarking, marking, recs)
+  pp(recs)
+  R.forEach(adjustSubMarking, recs)
+  pp(marking)
+  return R.pipe(R.toPairs, R.filter(r => r[1] > 0))(marking)
 }
 
 const isActiveTransition = marking => t => {
@@ -30,24 +38,31 @@ const isActiveTransition = marking => t => {
   return R.all(validateInput, t.inputs)
 }
 
-function handler (marking, msg) {
-  const transitions = netState.lookupTransition(msg.transitionName)
+function handler (prevRec, msg) {
+  const transitionName = msg.transitionName
+  const transitionIds = netState.lookupTransitionName(transitionName)
+  const marking = R.fromPairs(prevRec.marking)
 
-  if (R.isEmpty(transitions)) {
+  if (!marking) throw new Error('No previous marking!')
+
+  if (R.isEmpty(transitionIds)) {
     return {
       recordType: 'error',
       error: 'NoMatchingTransition',
-      msg
+      msg,
+      marking
     }
   }
 
+  const transitions = R.map(netState.lookupTransition, transitionIds)
   const activeTransitions = R.filter(isActiveTransition(marking), transitions)
 
   if (R.isEmpty(activeTransitions)) {
     return {
       recordType: 'warning',
       warning: 'NoActiveTransition',
-      msg
+      msg,
+      marking
     }
   }
 
@@ -56,7 +71,8 @@ function handler (marking, msg) {
       recordType: 'error',
       error: 'MultipleActiveTransitions',
       matchingTransitions: R.map(R.prop('name', activeTransitions)),
-      msg
+      msg,
+      marking
     }
   }
 
@@ -65,7 +81,8 @@ function handler (marking, msg) {
   return {
     recordType: 'firing',
     transitionId: transition.name,
-    data: msg.data
+    data: msg.data,
+    marking: adjustMarking(marking, transition)
   }
 }
 
