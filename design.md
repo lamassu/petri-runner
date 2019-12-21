@@ -262,3 +262,7 @@ Try example with callbags and xstream.
 * Callbags could be interesting. Test file doesn't seem to work with combine or merge.
 
 **Summary**: latest play/most-attach.js seems to work well. Try going with this.
+
+## Network down
+
+How do we handle something like network being down? Probably based to handle this with timeouts. The behavior is the same as if the user walks away from the machine. One difference is that we can also display a network-down screen. This should probably be handled outside the net. It can't be modeled well with our compisition model.

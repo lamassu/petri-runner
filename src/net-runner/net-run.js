@@ -36,12 +36,8 @@ const isActiveTransition = marking => t => {
   return R.all(validateInput, t.inputs)
 }
 
-function handler (prevRec, msg) {
-  const transitionName = msg.transitionName
+const fetchTransitionId= (name) => {
   const transitionIds = netState.lookupTransitionName(transitionName)
-  const marking = R.fromPairs(prevRec.marking)
-
-  if (!marking) throw new Error('No previous marking!')
 
   if (R.isEmpty(transitionIds)) {
     return {
@@ -74,7 +70,18 @@ function handler (prevRec, msg) {
     }
   }
 
-  const transition = R.head(activeTransitions)
+  return R.head(activeTransitions)
+}
+
+function handler (prevRec, msg) {
+  const transition = R.has('transitionName', msg)
+    ? fetchTransitionId(msg.transitionName)
+    : netState.lookupTransition(msg.transitionId)
+
+  const marking = R.fromPairs(prevRec.marking)
+
+  if (!marking) throw new Error('No previous marking!')
+
   const toArr = R.pipe(R.toPairs, R.filter(x => x[1] > 0))
 
   return {
