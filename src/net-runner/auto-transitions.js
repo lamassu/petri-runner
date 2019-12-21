@@ -10,7 +10,9 @@ function mapper (rec) {
 
   const transition = R.pipe(R.sortBy(R.prop('name')), R.head)(activeAutoTransitions)
 
-  return { transitionId: transition.name }
+  return {
+    transitionId: transition.name
+  }
 }
 
 module.exports = { mapper }
