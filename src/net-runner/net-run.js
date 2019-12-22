@@ -4,8 +4,7 @@ const netState = require('./net-state')
 
 const { pp } = require('../util')
 
-// Move this back to previous
-
+// TODO: add transition start times to handle "time petri net"
 const adjustMarking = (marking, transition) => {
   const def0 = R.defaultTo(0)
 
@@ -31,12 +30,33 @@ const adjustMarking = (marking, transition) => {
   return R.reduce(adjustSubMarking, marking, recs)
 }
 
+// Find active transitions, list them in marking,
+// add start-time if they are timed
+// TODO: don't reset clock if transition was already active.
+const markedActiveTransitions = (prevMarking, marking) => {
+  const transitions = netState.activeTransitions(marking)
+
+  const tLookup = {}
+  R.forEach(t => { tLookup[t.name] = t.activatedAt }, prevMarking.transitions)
+
+  const updateT = t => {
+    const activatedAt = R.propOr(Date.now(), t.name, tLookup)
+    return R.assoc('activatedAt', activatedAt, t)
+  }
+
+  const mark = t => {
+    return R.when(netState.isTimedTransition, updateT, transitions)
+  }
+
+  return R.map(mark, transitions)
+}
+
 const isActiveTransition = marking => t => {
   const validateInput = i => marking[i.srcPlace] >= i.srcTokenCount
   return R.all(validateInput, t.inputs)
 }
 
-const fetchTransitionId= (name) => {
+const fetchTransitionId = (name) => {
   const transitionIds = netState.lookupTransitionName(transitionName)
 
   if (R.isEmpty(transitionIds)) {
@@ -83,12 +103,14 @@ function handler (prevRec, msg) {
   if (!marking) throw new Error('No previous marking!')
 
   const toArr = R.pipe(R.toPairs, R.filter(x => x[1] > 0))
+  const newPlaceMarking = adjustMarking(marking, transition)
+  const newMarking = R.assoc('activeTransitions', markedActiveTransitions(newPlaceMarking))
 
   return {
     recordType: 'firing',
     transitionId: transition.name,
     data: msg.data,
-    marking: toArr(adjustMarking(marking, transition))
+    marking: toArr(newMarking)
   }
 }
 

@@ -45,11 +45,26 @@ const isActiveTransition = marking => t => {
   return R.all(validateInput, t.inputs)
 }
 
-const activeAutoTransitions = marking => {
+const activeTransitions = marking => {
   const markCandidates = m => transitionLookupByInputPlace[m[0]] || []
   const candidateTransitions = R.pipe(R.chain(markCandidates, marking), R.map(lookupTransition))
-  const isActiveAuto = R.both(isAutoTransition, isActiveTransition(marking))
-  return R.filter(isActiveAuto, candidateTransitions)
+  const isActive = isActiveTransition(marking)
+  return R.filter(isActive, candidateTransitions)
 }
 
-module.exports = { load, initialMarking, lookupTransition, lookupTransitionName, activeAutoTransitions }
+const activeAutoTransitions = marking => {
+  const transitions = activeTransitions(marking)
+  return R.filter(isAutoTransition, transitions)
+}
+
+const isTimedTransition = R.pipe(R.prop('tags'), R.any(R.test(/^timeout_/)))
+
+module.exports = {
+  load,
+  initialMarking,
+  lookupTransition,
+  lookupTransitionName,
+  activeTransitions,
+  activeAutoTransitions,
+  isTimedTransition
+}
