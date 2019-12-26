@@ -30,18 +30,33 @@ const adjustMarking = (marking, transition) => {
   return R.reduce(adjustSubMarking, marking, recs)
 }
 
+const unitScaler = {
+  ms: 1,
+  s: 1000,
+  m: 60000
+}
+
 // Find active transitions, list them in marking,
 // add start-time if they are timed
-// TODO: don't reset clock if transition was already active.
+// don't reset clock if transition was already active.
 const markedActiveTransitions = (prevMarking, marking) => {
   const transitions = netState.activeTransitions(marking)
 
   const tLookup = {}
-  R.forEach(t => { tLookup[t.name] = t.activatedAt }, prevMarking.transitions)
+  R.forEach(t => { tLookup[t.name] = t.fireableAt }, prevMarking.transitions)
 
   const updateT = t => {
-    const activatedAt = R.propOr(Date.now(), t.name, tLookup)
-    return R.assoc('activatedAt', activatedAt, t)
+    const toMilliseconds = ([num, units]) => num * unitScaler[units]
+
+    const computeFireableAt = R.pipe(
+      R.find(R.startsWith('timeout')),
+      R.match(/timeout_(\d)+(\w+)/),
+      toMilliseconds,
+      ms => Date.now() + ms
+    )
+
+    const fireableAt = R.propOr(computeFireableAt(t), t.name, tLookup)
+    return R.assoc('fireableAt', fireableAt, t)
   }
 
   const mark = t => {
@@ -51,58 +66,21 @@ const markedActiveTransitions = (prevMarking, marking) => {
   return R.map(mark, transitions)
 }
 
-const isActiveTransition = marking => t => {
-  const validateInput = i => marking[i.srcPlace] >= i.srcTokenCount
-  return R.all(validateInput, t.inputs)
+const isFireableTransition = marking => tId => {
+  const activeTransition = R.find(R.propEq('name', tId), marking.activeTransitions)
+  if (!activeTransition) return false
+  return R.isNil(activeTransition.fireableAt)
+    ? true
+    : activeTransition.fireableAt <= Date.now()
 }
 
-const fetchTransitionId = (name) => {
-  const transitionIds = netState.lookupTransitionName(transitionName)
-
-  if (R.isEmpty(transitionIds)) {
-    return {
-      recordType: 'error',
-      error: 'NoMatchingTransition',
-      msg,
-      marking
-    }
-  }
-
-  const transitions = R.map(netState.lookupTransition, transitionIds)
-  const activeTransitions = R.filter(isActiveTransition(marking), transitions)
-
-  if (R.isEmpty(activeTransitions)) {
-    return {
-      recordType: 'warning',
-      warning: 'NoActiveTransition',
-      msg,
-      marking
-    }
-  }
-
-  if (activeTransitions.length !== 1) {
-    return {
-      recordType: 'error',
-      error: 'MultipleActiveTransitions',
-      matchingTransitions: R.map(R.prop('name', activeTransitions)),
-      msg,
-      marking
-    }
-  }
-
-  return R.head(activeTransitions)
-}
-
-function handler (prevRec, msg) {
-  const transition = R.has('transitionName', msg)
-    ? fetchTransitionId(msg.transitionName)
-    : netState.lookupTransition(msg.transitionId)
-
+const toTransitionRecord = (prevRec, msg, transitionId) => {
   const marking = R.fromPairs(prevRec.marking)
 
   if (!marking) throw new Error('No previous marking!')
 
   const toArr = R.pipe(R.toPairs, R.filter(x => x[1] > 0))
+  const transition = netState.lookupTransition(transitionId)
   const newPlaceMarking = adjustMarking(marking, transition)
   const newMarking = R.assoc('activeTransitions', markedActiveTransitions(newPlaceMarking))
 
@@ -112,6 +90,57 @@ function handler (prevRec, msg) {
     data: msg.data,
     marking: toArr(newMarking)
   }
+}
+
+function handler (prevRec, msg) {
+  if (R.has('transitionId', msg)) return toTransitionRecord(prevRec, msg, msg.transitionId)
+
+  const marking = prevRec.marking
+
+  if (!msg.transitionName) {
+    return {
+      recordType: 'error',
+      error: 'NoMatchingTransition',
+      msg,
+      marking
+    }
+  }
+
+  const transitionIds = netState.lookupTransitionName(msg.transitionName)
+
+  if (R.isEmpty(transitionIds)) {
+    return {
+      recordType: 'error',
+      error: 'NoMatchingTransition',
+      msg,
+      marking: msg.marking
+    }
+  }
+
+  const fireableTransitions = R.filter(isFireableTransition(marking), transitionIds)
+
+  if (R.isEmpty(fireableTransitions)) {
+    return {
+      recordType: 'warning',
+      warning: 'NoActiveTransition',
+      msg,
+      marking
+    }
+  }
+
+  if (fireableTransitions.length !== 1) {
+    return {
+      recordType: 'error',
+      error: 'MultipleActiveTransitions',
+      matchingTransitions: fireableTransitions,
+      msg,
+      marking
+    }
+  }
+
+  const transitionId = R.head(fireableTransitions)
+
+  return toTransitionRecord(prevRec, msg, transitionId)
 }
 
 module.exports = { handler }
