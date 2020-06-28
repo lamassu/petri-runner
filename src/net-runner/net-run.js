@@ -128,7 +128,7 @@ function handler (prevRec, msg) {
     }
   }
 
-  if (fireableTransitions.length !== 1) {
+  if (fireableTransitions.length > 1) {
     return {
       recordType: 'error',
       error: 'MultipleActiveTransitions',

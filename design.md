@@ -227,9 +227,9 @@ There are a few options:
 
 ## Transition classes
 
-We already met a class of transitions, namely all transitions with a given *name*. We can define other arbitrary classes, based on tags. For instance, we could define a *user_ok* class, that indicates that a user has confirmed the screen. We can statically analyze that no two transitions of this class can ever fire, similarly to how we do it in the case of *names*.
+We already met a class of transitions, namely all transitions with a given *name*. We can define other arbitrary classes, based on tags. For instance, we could define a *user_ok* class, that indicates that a user has confirmed the screen. We can statically analyze that no two transitions of this class can ever simultaneously fire, similarly to how we do it in the case of *names*.
 
-This could much simplify code design, as every confirm button press could just generate a *user_tap* event. If done in combination with timeouts, we could really simplify many screens. We could do the same for *user_abort*. We could even create a *tap_or_timeout_30s* tag, although that's not a huge improvement over *user_tag,timeout_30s*.
+This could much simplify code design, as every confirm button press could just generate a *user_tap* event. If done in combination with timeouts, we could really simplify many screens. We could do the same for *user_abort*. We could even create a *tap_or_timeout_30s* tag, although that's not a huge improvement over *user_tap,timeout_30s*.
 
 ## Hooking up streams
 
@@ -265,4 +265,4 @@ Try example with callbags and xstream.
 
 ## Network down
 
-How do we handle something like network being down? Probably based to handle this with timeouts. The behavior is the same as if the user walks away from the machine. One difference is that we can also display a network-down screen. This should probably be handled outside the net. It can't be modeled well with our compisition model.
+How do we handle something like network being down? Probably best to handle this with timeouts. The behavior is the same as if the user walks away from the machine. One difference is that we can also display a network-down screen. This should probably be handled outside the net. It can't be modeled well with our composition model.
